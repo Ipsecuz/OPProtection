@@ -29,11 +29,12 @@ Với các tính năng như **xác minh đa tầng**, **chặn IP/GeoIP**, và *
 
 ## 📥 Cài Đặt
 
-1. Tải bản mới nhất tại [**Releases**](https://github.com/Ipsecuz/OPProtection/releases/tag/minecraft)) hoặc phiên bản cũ hoàn chỉnh không support folia [**Old Version**](https://www.spigotmc.org/resources/opprotection.128272/)
-2. Đặt file `.jar` vào thư mục `plugins/`.  
-3. Khởi động lại server hoặc chạy lệnh `/reload`.  
-4. Cấu hình file `config.yml`, `messages.yml`, `embed_discord.yml` theo nhu cầu.  
-5. Thêm tên admin của bạn vào danh sách `op-whitelist` trong `config.yml`.  
+1. Tải bản mới nhất tại [**Releases**](https://github.com/Ipsecuz/OPProtection/releases/tag/minecraft)) 
+2. Hoặc phiên bản cũ hoàn chỉnh không support folia [**Old Version**](https://www.mediafire.com/file/rcbnb0ack1wsnxg/OPProtection-2.3.3.jar/file)
+3. Đặt file `.jar` vào thư mục `plugins/`.  
+4. Khởi động lại server hoặc chạy lệnh `/reload`.  
+5. Cấu hình file `config.yml`, `messages.yml`, `embed_discord.yml` theo nhu cầu.  
+6. Thêm tên admin của bạn vào danh sách `op-whitelist` trong `config.yml`.  
 
 ## Dependencies (Phụ thuộc)
 1. ProtocolLib (bắt buộc)
