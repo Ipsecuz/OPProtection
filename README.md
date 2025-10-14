@@ -29,7 +29,7 @@ Với các tính năng như **xác minh đa tầng**, **chặn IP/GeoIP**, và *
 
 ## 📥 Cài Đặt
 
-1. Tải bản mới nhất tại [**Releases**]([https://github.com/your-repo/releases](https://github.com/Ipsecuz/OPProtection/releases/tag/minecraft)).  
+1. Tải bản mới nhất tại [**Releases**](https://github.com/Ipsecuz/OPProtection/releases/tag/minecraft))
 2. Đặt file `.jar` vào thư mục `plugins/`.  
 3. Khởi động lại server hoặc chạy lệnh `/reload`.  
 4. Cấu hình file `config.yml`, `messages.yml`, `embed_discord.yml` theo nhu cầu.  
