@@ -35,6 +35,8 @@ Với các tính năng như **xác minh đa tầng**, **chặn IP/GeoIP**, và *
 4. Cấu hình file `config.yml`, `messages.yml`, `embed_discord.yml` theo nhu cầu.  
 5. Thêm tên admin của bạn vào danh sách `op-whitelist` trong `config.yml`.  
 
+## Dependencies (Phụ thuộc)
+1. ProtocolLib (bắt buộc)
 ---
 
 ## ⚙️ Cấu Hình
