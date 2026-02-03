@@ -1,0 +1,13 @@
+C:\plugin_build\OPProtection\src\main\java\org\ipsecuz\opprotection\command\CommandOPPass.java
+C:\plugin_build\OPProtection\src\main\java\org\ipsecuz\opprotection\command\CommandOPReload.java
+C:\plugin_build\OPProtection\src\main\java\org\ipsecuz\opprotection\discord\DiscordBot.java
+C:\plugin_build\OPProtection\src\main\java\org\ipsecuz\opprotection\listener\CommandBlocker.java
+C:\plugin_build\OPProtection\src\main\java\org\ipsecuz\opprotection\listener\OPListener.java
+C:\plugin_build\OPProtection\src\main\java\org\ipsecuz\opprotection\listener\PacketIpCheck.java
+C:\plugin_build\OPProtection\src\main\java\org\ipsecuz\opprotection\listener\TabCompleteBlocker.java
+C:\plugin_build\OPProtection\src\main\java\org\ipsecuz\opprotection\managers\IPManager.java
+C:\plugin_build\OPProtection\src\main\java\org\ipsecuz\opprotection\managers\OpManager.java
+C:\plugin_build\OPProtection\src\main\java\org\ipsecuz\opprotection\managers\VerificationMethod.java
+C:\plugin_build\OPProtection\src\main\java\org\ipsecuz\opprotection\OPProtection.java
+C:\plugin_build\OPProtection\src\main\java\org\ipsecuz\opprotection\utils\ConfigCache.java
+C:\plugin_build\OPProtection\src\main\java\org\ipsecuz\opprotection\utils\GeoIPChecker.java

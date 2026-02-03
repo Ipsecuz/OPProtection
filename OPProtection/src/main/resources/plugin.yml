@@ -1,0 +1,27 @@
+name: OPProtection
+version: '2.5-folia'
+main: org.ipsecuz.opprotection.OPProtection
+api-version: '1.13'
+load: POSTWORLD
+author: 'Ipsecuz_, FoxStudio'
+depend: [ProtocolLib]
+softdepend: [LuckPerms]
+folia-supported: true
+commands:
+  oppass:
+    description: Quản lý xác minh OP
+    usage: /<command> <password>
+    permission: opprotection.oppass
+    permission-message: ""
+  opreload:
+    description: Reload cấu hình plugin
+    usage: /<command>
+    permission: opprotection.opreload
+    permission-message: Bạn không có quyền sử dụng lệnh này!
+permissions:
+  opprotection.oppass:
+    default: op
+  opprotection.opreload:
+    default: op
+  opprotection.temp:
+    default: false

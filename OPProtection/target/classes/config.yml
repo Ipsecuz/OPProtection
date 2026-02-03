@@ -1,0 +1,85 @@
+# Anti UUid/Ip Spoof
+ip-forwarding: false  # true hoặc false, tuỳ server có sài Bungee/Velocity forwarding không
+
+# Thời gian yêu cầu xác minh lại OP (tính bằng phút/minutes)
+op-verification-reset-time: 20
+
+# Thêm tên bạn vào đây nhé, thay đổi pass với lại thay thời gian nhá
+op-whitelist:
+  - YourName
+op-password: pass_vao_day #đặt pass sao cũng được
+pass-timeout: 50
+
+tab-complete-block:
+  enabled: true
+  debug: false
+  blocked-commands:
+    - "ver"
+    - "version"
+    - "about"
+    - "bukkit:ver"
+    - "bukkit:version"
+    - "bukkit:about"
+    - "minecraft:ver"
+    - "minecraft:version"
+    - "minecraft:about"
+    - "icanhasbukkit"
+
+# Thêm lệnh vào để chặn lệnh í:>
+disabled-commands:
+  - op
+  - pl
+  - plugins
+  - about
+  - bukkit
+  - ver
+  - version
+  - icanhasbukkit
+  - server
+  - luckperms
+  - luckperms:lp
+  - lp
+  - setblock
+  - kill
+  - /sphere
+  - pt
+  - powertool
+  - ept
+  - execute
+  - perms
+  - perm
+  - permission
+# CHẶN LỆNH RIÊNG CHO CONSOLE
+console-blocked-cmd:
+  enabled: true
+  commands:
+    - "about"
+    - "stop"
+
+# Lệnh được phép dùng khi chưa xác minh OP
+allowed-commands:
+  - oppass
+  - login
+  - l
+  - register
+
+#(****lưu ý nó sẽ check all player luôn không phải người trong whitelist op****)
+logout-actions:
+  - "deop %player%"
+  - "lp user %player% permission unset *"
+  - "gamemode survival %player%"
+
+# Discord bot cho 2fa (true thì true hết còn false thì false hết ở enabled và use-2fa)
+discord:
+  enabled: false
+  token: "YOUR_BOT_TOKEN"
+  channel-id: "YOUR_CHANNEL_ID"
+  use-2fa: false
+
+# Anti VPN
+geoip:
+  enabled: false
+  allowed-countries:
+    - "VN"  # Việt Nam
+  block-message: "&cQuốc gia của bạn không được phép truy cập server!"
+#data:

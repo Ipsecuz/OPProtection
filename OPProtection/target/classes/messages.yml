@@ -1,0 +1,61 @@
+prefix: "&7[&cOPProtection&7] "
+
+# --- LỆNH & QUYỀN ---
+no_permission: "&cBạn không có quyền sử dụng lệnh này!"
+oppass_usage: "&eVui lòng nhập: /oppass <mật khẩu>"
+oppass_change_usage: "&eĐổi pass: /oppass change <cũ> <mới>"
+password_changed: "&aĐổi mật khẩu thành công!"
+password_wrong: "&cMật khẩu sai!"
+already_confirmed: "&aĐã xác minh thành công rồi"
+
+# --- XÁC MINH OP (PASS & 2FA) ---
+login_success: "&aXác minh OP thành công!" # Dùng khi nhập pass đúng (auto xác thực)
+oppass_password_correct: "&aMật khẩu đúng! Vui lòng chờ admin xác minh từ console bằng /oppass confirm %player%"
+oppass_password_incorrect: "&cMật khẩu sai!"
+oppass_confirm_player_offline: "&cNgười chơi không online!"
+oppass_confirm_not_in_whitelist: "&cNgười chơi không trong danh sách trắng!"
+oppass_confirm_not_needed: "&aNgười chơi không cần xác minh!"
+oppass_confirm_no_password: "&cNgười chơi chưa nhập mật khẩu đúng!"
+oppass_confirm_discord_pending: "&cNgười chơi đang chờ xác minh từ Discord!"
+oppass_confirm_success: "&aĐã xác minh OP cho %player%"
+oppass_confirm_success_player: "&aXác minh OP thành công qua console!"
+
+# --- 2FA / DISCORD ---
+oppass_2fa_correct: "&aMã 2FA chính xác! Vui lòng chờ admin xác minh trên Discord."
+oppass_2fa_incorrect: "&cMã 2FA không đúng!"
+oppass_2fa_code_already_sent: "&aMã code đã được gửi, hãy lên discord check!"
+oppass_2fa_discord_sent: "&aLên discord check đê!"
+oppass_2fa_wait_admin: "&aĐợi admin xác minh trên discord nha"
+oppass_discord_pending: "&cĐang chờ xác minh từ Discord! Vui lòng chờ hoặc hủy."
+
+# --- KHOA OP (LOCK) ---
+op_verification_title: "&cXÁC MINH OP"
+op_verification_subtitle: "&eThời gian: %time%s"
+op_verification_instruction: "&eHãy nhập &a/oppass <mật khẩu> &etrong &c%time%s &eđể xác minh OP!"
+op_verification_discord_instruction: "&eHoặc chờ xác minh từ Discord!"
+op_verification_console_instruction: "&eHoặc yêu cầu admin xác minh từ console!"
+op_verification_timeout: "&cHết thời gian xác minh!"
+op_verification_timeout_kick: "&cBạn đã bị BAN vì hết thời gian xác minh OP!"
+op_verification_success: "&aXác minh OP xong!"
+op_verification_warning: "&eCảnh báo: Bạn cần xác minh lại OP trong 30 giây! Hãy chuẩn bị nhập /oppass."
+op_verification_ip_mismatch: "&cIP của bạn không trùng khớp, vui lòng kiểm tra lại!"
+
+# --- RESET IP ---
+oppass_resetip_success: "&aĐã reset IP của %player% về 'unknown'."
+oppass_resetip_not_found: "&cKhông tìm thấy IP được lưu cho %player%."
+
+# --- CONSOLE USAGE ---
+oppass_console_usage: "&cCách dùng:"
+oppass_console_confirm_usage: "&c/oppass confirm <player> - Xác minh OP cho người chơi"
+oppass_console_resetip_usage: "&c/oppass resetip <player> - Reset IP"
+
+# --- BLOCK / GEOIP ---
+command_blocked: "&cLệnh này đã bị vô hiệu hóa!"
+geoip_block_message: "&cQuốc gia của bạn không được phép!"
+
+# --- SYSTEM ---
+reload_ingame_error: "&cKhông thể dùng trong game!"
+reload_success: "&aReload OPProtection thành công!"
+
+# --- ANTICHEAT ---
+op_fake_ban_reason: "&cPhát hiện cố tình chiếm quyền OP trái phép (Hack/Exploit)!"

@@ -1,0 +1,17 @@
+org\ipsecuz\opprotection\listener\PacketIpCheck.class
+org\ipsecuz\opprotection\utils\ConfigCache.class
+org\ipsecuz\opprotection\listener\OPListener.class
+org\ipsecuz\opprotection\listener\TabCompleteBlocker.class
+org\ipsecuz\opprotection\managers\OpManager.class
+org\ipsecuz\opprotection\listener\TabCompleteBlocker$2.class
+org\ipsecuz\opprotection\utils\GeoIPChecker.class
+org\ipsecuz\opprotection\managers\IPManager.class
+org\ipsecuz\opprotection\command\CommandOPPass.class
+org\ipsecuz\opprotection\listener\TabCompleteBlocker$1.class
+org\ipsecuz\opprotection\managers\OpManager$1.class
+org\ipsecuz\opprotection\managers\VerificationMethod.class
+org\ipsecuz\opprotection\managers\OpManager$VerificationMethod.class
+org\ipsecuz\opprotection\OPProtection.class
+org\ipsecuz\opprotection\discord\DiscordBot.class
+org\ipsecuz\opprotection\command\CommandOPReload.class
+org\ipsecuz\opprotection\listener\CommandBlocker.class

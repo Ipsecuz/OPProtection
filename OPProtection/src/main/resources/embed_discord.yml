@@ -1,0 +1,60 @@
+request:
+  title: "🔐 Xác minh OP"
+  color: 16776960
+  fields:
+    - name: "🧍 Người chơi"
+      value: "%player%"
+    - name: "🌐 IP"
+      value: "%ip%"
+    - name: "✅ Trạng thái"
+      value: "Yêu cầu"
+
+verified:
+  title: "✅ Xác minh thành công"
+  color: 65280
+  fields:
+    - name: "🧍 Người chơi"
+      value: "%player%"
+    - name: "🌐 IP"
+      value: "%ip%"
+    - name: "✅ Trạng thái"
+      value: "Đã xác minh thành công"
+  footer: "Đã xác minh bởi hệ thống"
+
+2fa-code:
+  title: "🔐 Mã xác thực 2FA"
+  color: 5814783
+  fields:
+    - name: "🧍 Người chơi"
+      value: "%player%"
+    - name: "🔑 Mã xác thực"
+      value: "``%code%``"
+    - name: "⚠ Lưu ý"
+      value: "Mã có hiệu lực trong 5 phút!"
+  footer: "Chỉ quản trị viên mới được xác minh"
+
+suspicious:
+  title: "❌ Cảnh báo đăng nhập"
+  color: 16711680
+  fields:
+    - name: "🧍 Người chơi"
+      value: "%player%"
+    - name: "🌐 IP"
+      value: "%ip%"
+    - name: "❌ Trạng thái"
+      value: "Nghi vấn"
+
+spoof-alert:
+  title: "🚨 IP/UUID Spoof Detected"
+  color: 16711680
+  fields:
+    - name: "🧍 Người chơi"
+      value: "%player%"
+    - name: "🔌 Socket IP"
+      value: "%socketIp%"
+    - name: "📡 Spoofed IP"
+      value: "%spoofedIp%"
+    - name: "🆔 Spoofed UUID"
+      value: "%spoofedUuid%"
+    - name: "⚠ Lý do"
+      value: "%reason%"
