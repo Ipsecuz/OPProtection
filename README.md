@@ -116,7 +116,7 @@ Lấy Channel ID (chuột phải → Copy Channel ID).
 📜 Lệnh & Quyền
 Lệnh	Mô tả	Quyền
 
-/oppass <mật khẩu>	Xác minh quyền OP của chính bạn	(Không cần)
+/oppass <mật khẩu>	Xác minh quyền OP của chính bạn	-> Player
 
 /oppass confirm <tên>	Xác minh OP cho người chơi khác ->	Console
 
