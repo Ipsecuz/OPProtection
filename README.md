@@ -115,11 +115,14 @@ Lấy Channel ID (chuột phải → Copy Channel ID).
 
 📜 Lệnh & Quyền
 Lệnh	Mô tả	Quyền
+
 /oppass <mật khẩu>	Xác minh quyền OP của chính bạn	(Không cần)
-/oppass confirm <tên>	Xác minh OP cho người chơi khác	Console
-/oppass resetip <tên>	Reset IP của người chơi về unknown	Console
-/opreload	Tải lại toàn bộ cấu hình plugin	Console
-/opemergency	Bật/tắt chế độ khẩn cấp	Console
+
+/oppass confirm <tên>	Xác minh OP cho người chơi khác ->	Console
+
+/oppass resetip <tên>	Reset IP của người chơi về unknown ->	Console
+
+/opreload	Tải lại toàn bộ cấu hình plugin	-> Console
 
 🤝 Đóng Góp
 
