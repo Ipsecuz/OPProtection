@@ -6,7 +6,7 @@
 
     <groupId>org.ipsecuz</groupId>
     <artifactId>OPProtection</artifactId>
-    <version>2.5-folia</version>
+    <version>2.5.1-folia</version>
     <packaging>jar</packaging>
 
     <name>OPProtection</name>

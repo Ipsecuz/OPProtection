@@ -68,6 +68,7 @@ public class OpManager implements Listener {
     private final Map<UUID, Boolean> isLocked = new ConcurrentHashMap<>();
     private final Set<UUID> confirmedPlayers = new HashSet<>();
     private final Map<UUID, Boolean> awaitingConsoleConfirm = new ConcurrentHashMap<>();
+    private final Map<UUID, Long> lastCommandTimestamp = new ConcurrentHashMap<>();
 
     private static final long CODE_LIFETIME = 60000L;
     private final boolean isFolia;
@@ -174,6 +175,26 @@ public class OpManager implements Listener {
     public void onPlayerCommand(PlayerCommandPreprocessEvent event) {
         Player p = event.getPlayer();
         String msg = event.getMessage();
+
+        if (this.plugin.getConfig().getBoolean("anti-spam.enabled", false)) {
+            if (!p.isOp()) {
+                UUID uuid = p.getUniqueId();
+                long now = System.currentTimeMillis();
+                Long lastTime = this.lastCommandTimestamp.get(uuid);
+
+                long delayMs = (long) (this.plugin.getConfig().getDouble("anti-spam.delay-seconds", 0.5) * 1000);
+
+                if (lastTime != null && (now - lastTime) < delayMs) {
+                    event.setCancelled(true);
+                    p.sendMessage(ChatColor.translateAlternateColorCodes('&',
+                            this.plugin.getConfig().getString("anti-spam.spam-message", "&cBạn đang spam lệnh quá nhanh!"))
+                    );
+                    return;
+                }
+
+                this.lastCommandTimestamp.put(uuid, now);
+            }
+        }
 
         String[] parts = msg.split("\\s+");
         if (parts.length == 0) return;
@@ -641,6 +662,7 @@ public class OpManager implements Listener {
         this.removeBlind(p);
         this.remove2FACode(p);
         this.removeTemporaryPermission(p);
+        this.lastCommandTimestamp.remove(uuid);
 
         if (this.logoutActions != null && !this.logoutActions.isEmpty()) {
             if (this.opWhitelist.contains(p.getName())) {

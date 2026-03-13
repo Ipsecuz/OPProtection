@@ -63,7 +63,7 @@ allowed-commands:
   - l
   - register
 
-#(****lưu ý nó sẽ check all player luôn không phải người trong whitelist op****)
+#(****Kiểm tra người trong whitelist op****)
 logout-actions:
   - "deop %player%"
   - "lp user %player% permission unset *"
@@ -82,4 +82,11 @@ geoip:
   allowed-countries:
     - "VN"  # Việt Nam
   block-message: "&cQuốc gia của bạn không được phép truy cập server!"
-#data:
+
+#Anti-Spam commands
+anti-spam:
+  enabled: true
+  # Thời gian tối thiểu giữa 2 lệnh (giây)
+  delay-seconds: 1
+  # Thông báo khi bị chặn
+  spam-message: "&cHãy chậm lại! Bạn đang spam lệnh quá nhanh."

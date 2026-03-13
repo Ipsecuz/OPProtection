@@ -1,5 +1,5 @@
 name: OPProtection
-version: '2.5-folia'
+version: '2.5.1-folia'
 main: org.ipsecuz.opprotection.OPProtection
 api-version: '1.13'
 load: POSTWORLD
