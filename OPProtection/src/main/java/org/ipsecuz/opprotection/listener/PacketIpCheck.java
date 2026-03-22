@@ -49,8 +49,8 @@ public class PacketIpCheck implements Listener {
     @EventHandler
     public void onAsyncPreLogin(AsyncPlayerPreLoginEvent event) {
         String ip = event.getAddress().getHostAddress();
+        
         if (ip.equals("127.0.0.1") || ip.equals("::1") || ip.startsWith("192.168.") || ip.startsWith("10.")) {
-            return;
         }
 
         if (!this.geoIPChecker.isCountryAllowed(ip)) {
@@ -58,6 +58,37 @@ public class PacketIpCheck implements Listener {
                     ChatColor.translateAlternateColorCodes('&',
                             this.plugin.getConfig().getString("geoip.block-message", "&cQuốc gia của bạn không được phép!"))
             );
+            return;
+        }
+
+        if (this.plugin.getConfig().getBoolean("domain-whitelist.enabled", false)) {
+            String hostname = event.getHostname();
+            
+            if (hostname == null) hostname = "";
+            
+            hostname = hostname.toLowerCase(); 
+
+            List<String> allowedDomains = this.plugin.getConfig().getStringList("domain-whitelist.allowed-domains");
+            boolean isAllowed = false;
+
+            for (String domain : allowedDomains) {
+                domain = domain.toLowerCase().trim(); 
+                // -----------------------------
+
+                if (hostname.startsWith(domain)) {
+                    isAllowed = true;
+                    break;
+                }
+            }
+
+            if (!isAllowed) {
+                String kickMsg = ChatColor.translateAlternateColorCodes('&', 
+                    "&cBạn không được phép kết nối trực tiếp vào server này!\n&eVui lòng sử dụng domain chính thống: &f" + 
+                    (allowedDomains.isEmpty() ? "Unknown" : allowedDomains.get(0)));
+                
+                event.disallow(AsyncPlayerPreLoginEvent.Result.KICK_OTHER, kickMsg);
+                return;
+            }
         }
     }
 

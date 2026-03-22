@@ -8,7 +8,7 @@ op-verification-reset-time: 20
 op-whitelist:
   - YourName
 op-password: pass_vao_day #đặt pass sao cũng được
-pass-timeout: 50
+pass-timeout: 60
 
 tab-complete-block:
   enabled: true
@@ -85,8 +85,15 @@ geoip:
 
 #Anti-Spam commands
 anti-spam:
-  enabled: true
+  enabled: false
   # Thời gian tối thiểu giữa 2 lệnh (giây)
   delay-seconds: 1
   # Thông báo khi bị chặn
   spam-message: "&cHãy chậm lại! Bạn đang spam lệnh quá nhanh."
+
+# Người chơi phải vào qua các domain trong danh sách này mới được accept
+domain-whitelist:
+  enabled: false
+  allowed-domains:
+    - "play.myserver.com"
+    - "mc.yourdomain.net"

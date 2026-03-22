@@ -77,7 +77,7 @@ public class OPProtection extends JavaPlugin {
     private void loadManagers() {
         Set<String> opWhitelist = new HashSet<>(getConfig().getStringList("op-whitelist"));
         String opPassword = getConfig().getString("op-password", "defaultpass");
-        int passTimeout = getConfig().getInt("op-pass-timeout", 60);
+        int passTimeout = getConfig().getInt("pass-timeout", 60);
         Set<String> disabledCommands = new HashSet<>(getConfig().getStringList("disabled-commands"));
         List<String> logoutActions = getConfig().getStringList("logout-actions");
 
