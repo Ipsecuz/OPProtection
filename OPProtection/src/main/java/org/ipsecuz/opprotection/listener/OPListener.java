@@ -127,6 +127,8 @@ public class OPListener
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent event) {
         this.opManager.handleLogout(event.getPlayer());
+        // Remove Discord-Sync verification on logout
+        this.plugin.getDiscordSyncModule().unverifyPlayer(event.getPlayer());
     }
 
     @EventHandler

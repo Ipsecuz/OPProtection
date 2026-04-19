@@ -10,11 +10,16 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.ipsecuz.opprotection.listener.CommandBlocker;
 import org.ipsecuz.opprotection.listener.PacketIpCheck;
 import org.ipsecuz.opprotection.listener.TabCompleteBlocker;
+import org.ipsecuz.opprotection.listener.F3BrandBlocker;
 import org.ipsecuz.opprotection.command.CommandOPPass;
 import org.ipsecuz.opprotection.command.CommandOPReload;
+import org.ipsecuz.opprotection.command.CommandVerify;
+import org.ipsecuz.opprotection.command.CommandOpVerify;
 import org.ipsecuz.opprotection.discord.DiscordBot;
+import org.ipsecuz.opprotection.discord.DiscordEventListener;
 import org.ipsecuz.opprotection.managers.IPManager;
 import org.ipsecuz.opprotection.managers.OpManager;
+import org.ipsecuz.opprotection.managers.DiscordSyncModule;
 import org.ipsecuz.opprotection.utils.ConfigCache;
 
 import java.io.File;
@@ -28,11 +33,16 @@ public class OPProtection extends JavaPlugin {
     private OpManager opManager;
     private IPManager ipManager;
     private DiscordBot discordBot;
+    private DiscordEventListener discordEventListener;
+    private DiscordSyncModule discordSyncModule;
     private ConfigCache configCache;
     private FileConfiguration messagesConfig;
     private FileConfiguration embedConfig;
+    private F3BrandBlocker f3BrandBlocker;
     private final ScheduledExecutorService asyncExecutor = Executors.newScheduledThreadPool(2);
     private volatile boolean needsConfigSave = false;
+    private static final String RESET = "\u001B[0m";
+
 
     @Override
     public void onEnable() {
@@ -44,6 +54,9 @@ public class OPProtection extends JavaPlugin {
         loadEmbedsConfig();
 
         this.configCache = new ConfigCache(this);
+        
+        initializePacketEvents();
+        
         loadManagers();
         registerListeners();
         registerCommands();
@@ -62,6 +75,7 @@ public class OPProtection extends JavaPlugin {
                 if (opManager.isLocked(p)) opManager.handleLogout(p);
             }
         }
+        if (discordEventListener != null) discordEventListener.shutdown();
         if (discordBot != null) discordBot.shutdown();
         if (needsConfigSave) super.saveConfig();
 
@@ -71,7 +85,7 @@ public class OPProtection extends JavaPlugin {
         } catch (InterruptedException e) {
             asyncExecutor.shutdownNow();
         }
-        getLogger().info("§c✗ OPProtection disabled");
+        getLogger().info("§cOPProtection disabled");
     }
 
     private void loadManagers() {
@@ -83,6 +97,7 @@ public class OPProtection extends JavaPlugin {
 
         this.opManager = new OpManager(this, opWhitelist, opPassword, passTimeout, disabledCommands, logoutActions);
         this.ipManager = new IPManager(this);
+        this.discordSyncModule = new DiscordSyncModule(this);
 
         if (getConfig().getBoolean("discord.enabled", false)) {
             String token = getConfig().getString("discord.token");
@@ -91,10 +106,27 @@ public class OPProtection extends JavaPlugin {
                 try {
                     this.discordBot = new DiscordBot(this, token, channelId);
                     getLogger().info("§aDiscord bot enabled");
+                    
+                    if (discordBot.isConnected()) {
+                        this.discordEventListener = new DiscordEventListener(this, discordBot.getClient());
+                        getLogger().info("§aDiscord event listener registered");
+                    }
                 } catch (Exception e) {
                     getLogger().severe("§cFailed to start Discord Bot: " + e.getMessage());
+                    e.printStackTrace();
                 }
             }
+        }
+    }
+
+    private void initializePacketEvents() {
+        try {
+            if (com.github.retrooper.packetevents.PacketEvents.getAPI() != null) {
+                getLogger().info("§aPacketEvents initialized successfully");
+            }
+        } catch (Exception e) {
+            getLogger().warning("§cFailed to initialize PacketEvents: " + e.getMessage());
+            getLogger().warning("§cTab completion filtering may not work correctly");
         }
     }
 
@@ -106,8 +138,20 @@ public class OPProtection extends JavaPlugin {
         if (getConfig().getBoolean("tab-complete-block.enabled", true)) {
             try {
                 Bukkit.getPluginManager().registerEvents(new TabCompleteBlocker(this), this);
+                getLogger().info("§aTabCompleteBlocker enabled (PacketEvents)");
             } catch (Exception e) {
-                getLogger().warning("Could not enable TabCompleteBlocker (ProtocolLib missing?): " + e.getMessage());
+                getLogger().warning("Could not enable TabCompleteBlocker (PacketEvents missing?): " + e.getMessage());
+            }
+        }
+
+        if (getConfig().getBoolean("f3-brand-spoof.enabled", false)) {
+            try {
+                this.f3BrandBlocker = new F3BrandBlocker(this);
+                com.github.retrooper.packetevents.PacketEvents.getAPI().getEventManager().registerListener(this.f3BrandBlocker);
+                getLogger().info("§aF3 Brand Spoofer enabled (PacketEvents)");
+            } catch (Exception e) {
+                getLogger().warning("Could not enable F3 Brand Spoofer: " + e.getMessage());
+                e.printStackTrace();
             }
         }
     }
@@ -125,7 +169,42 @@ public class OPProtection extends JavaPlugin {
             getLogger().warning("Command 'opreload' not found in plugin.yml!");
         }
 
+        if (getCommand("verify") != null) {
+            getCommand("verify").setExecutor(new CommandVerify(this));
+        } else {
+            getLogger().warning("Command 'verify' not found in plugin.yml!");
+        }
+
+        if (getCommand("opverify") != null) {
+            getCommand("opverify").setExecutor(new CommandOpVerify(this));
+        } else {
+            getLogger().warning("Command 'opverify' not found in plugin.yml!");
+        }
+
     }
+
+    public String gradient(String text, int r1, int g1, int b1, int r2, int g2, int b2) {
+        StringBuilder sb = new StringBuilder();
+
+        int length = text.length();
+        for (int i = 0; i < length; i++) {
+            float ratio = (float) i / (length - 1);
+
+            int r = (int) (r1 + (r2 - r1) * ratio);
+            int g = (int) (g1 + (g2 - g1) * ratio);
+            int b = (int) (b1 + (b2 - b1) * ratio);
+
+            sb.append("\u001B[38;2;")
+            .append(r).append(";")
+            .append(g).append(";")
+            .append(b).append("m")
+            .append(text.charAt(i));
+        }
+
+        sb.append(RESET);
+        return sb.toString();
+    }
+    
 
     private void loadMessagesConfig() {
         File file = new File(getDataFolder(), "messages.yml");
@@ -157,6 +236,10 @@ public class OPProtection extends JavaPlugin {
         List<String> logoutActions = getConfig().getStringList("logout-actions");
 
         opManager.reload(opWhitelist, opPassword, passTimeout, disabledCommands, logoutActions);
+        discordSyncModule.reload();
+            if (f3BrandBlocker != null) {
+            f3BrandBlocker.reload();
+        }
         getLogger().info("§aPlugin reloaded successfully");
     }
 
@@ -178,7 +261,6 @@ public class OPProtection extends JavaPlugin {
     }
 
     public String getMessage(String key) {
-        // Lấy prefix từ config, nếu không có thì dùng mặc định
         String prefix = messagesConfig.getString("prefix", "&7[&cOPProtection&7] ");
 
         String msg = messagesConfig.getString(key);
@@ -218,8 +300,9 @@ public class OPProtection extends JavaPlugin {
                 " \\_______  /____|    |____|",
                 "         \\/"
         };
+
         for (String line : logo) {
-            getLogger().info(line);
+            getLogger().info(gradient(line, 255, 80, 80, 180, 0, 255));
         }
     }
 
@@ -229,5 +312,15 @@ public class OPProtection extends JavaPlugin {
     public boolean isDiscordEnabled() { return discordBot != null; }
     public FileConfiguration getEmbedConfig() { return embedConfig; }
     public ConfigCache getConfigCache() { return configCache; }
+    public DiscordSyncModule getDiscordSyncModule() { return discordSyncModule; }
     public ScheduledExecutorService getAsyncExecutor() { return asyncExecutor; }
+    
+    public boolean isFolia() {
+        try {
+            Class.forName("io.papermc.paper.threadedregions.RegionedServer");
+            return true;
+        } catch (ClassNotFoundException e) {
+            return false;
+        }
+    }
 }

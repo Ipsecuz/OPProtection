@@ -29,11 +29,22 @@ public class DiscordBot {
         if (channelId.isEmpty()) {
             plugin.getLogger().warning("\u26a0 channelId không được cấu hình trong config.yml!");
         }
+        
         System.setProperty("org.ipsecuz.opprotection.libs.reactor.netty.http.client.decompress", "false");
+        System.setProperty("org.ipsecuz.opprotection.libs.reactor.netty.ioWorkerCount", "2");
+        System.setProperty("org.ipsecuz.opprotection.libs.reactor.netty.tcp.ssl.handshakeTimeout", "10000");
+        
         try {
-            this.client = DiscordClientBuilder.create(token).build().login().block();
+            this.client = DiscordClientBuilder.create(token)
+                    .build()
+                    .login()
+                    .retry(3) 
+                    .block(java.time.Duration.ofSeconds(30));
+                    
+            plugin.getLogger().info("§aDiscord Bot connected successfully");
         } catch (Exception e) {
             plugin.getLogger().severe("Không thể khởi tạo Discord Bot: " + e.getMessage());
+            e.printStackTrace();
             throw new RuntimeException("Discord Bot login failed", e);
         }
     }
@@ -80,7 +91,6 @@ public class DiscordBot {
 
         String player = placeholders.getOrDefault("player", "unknown");
 
-        // Xử lý Edit hoặc Create Mới một cách bất đồng bộ (Async) để không lag server
         channelMono.subscribe(
                 channel -> {
                     if (this.active2faMessages.containsKey(player) && (type.equals("2fa-code") || type.equals("verified"))) {
@@ -92,6 +102,8 @@ public class DiscordBot {
                                 .build();
 
                         channel.getMessageById(msgId).flatMap(m -> m.edit(editSpec))
+                                .retry(2)  // Retry 2 times on failure
+                                .timeout(java.time.Duration.ofSeconds(10))  // 10 second timeout
                                 .subscribe(
                                         success -> {
                                             if (type.equals("verified")) {
@@ -102,7 +114,6 @@ public class DiscordBot {
                                             if (error.getMessage() != null && (error.getMessage().contains("404") || error.getMessage().contains("10008"))) {
                                                 this.active2faMessages.remove(player);
                                                 this.plugin.getLogger().warning("Tin nhắn cũ không tồn tại cho player " + player + ", sẽ gửi tin nhắn mới.");
-                                                // Gửi mới nếu edit fail
                                                 createNewMessage(channel, embed, player, type);
                                             } else {
                                                 this.plugin.getLogger().warning("Lỗi khi chỉnh sửa tin nhắn Discord: " + error.getMessage());
@@ -124,7 +135,10 @@ public class DiscordBot {
                 (String)(type.equals("2fa-code") ? "🔐 Yêu cầu xác minh 2FA cho " + player : "📢 Thông báo OPProtection!")
         ).addEmbed(embed.build());
 
-        channel.createMessage(msg.build()).subscribe(
+        channel.createMessage(msg.build())
+                .retry(3)  
+                .timeout(java.time.Duration.ofSeconds(10)) 
+                .subscribe(
                 success -> {
                     if (type.equals("2fa-code") && success != null) {
                         this.active2faMessages.put(player, success.getId());
@@ -137,16 +151,62 @@ public class DiscordBot {
     }
 
     public void sendSimpleMessage(String content) {
-        if (this.client == null) return;
-        Mono<MessageChannel> channelMono = this.client.getChannelById(Snowflake.of(this.channelId)).cast(MessageChannel.class);
+        if (this.client == null) {
+            plugin.getLogger().warning("Discord client is null, cannot send message");
+            return;
+        }
+        
+        try {
+            Mono<MessageChannel> channelMono = this.client.getChannelById(Snowflake.of(this.channelId))
+                    .cast(MessageChannel.class)
+                    .doOnError(error -> {
+                        if (error.getMessage() != null && error.getMessage().contains("404")) {
+                            plugin.getLogger().severe("Discord channel not found (404). Check channelId in config.yml");
+                        } else {
+                            plugin.getLogger().severe("Failed to get Discord channel: " + error.getMessage());
+                        }
+                    });
 
-        channelMono.subscribe(
-                channel -> channel.createMessage(content).subscribe(
-                        success -> {},
-                        error -> this.plugin.getLogger().severe("Không thể gửi tin nhắn đơn giản: " + error.getMessage())
-                ),
-                error -> {}
-        );
+            channelMono.subscribe(
+                    channel -> channel.createMessage(content)
+                            .retry(3)  
+                            .timeout(java.time.Duration.ofSeconds(10))
+                            .subscribe(
+                                success -> {
+                                    plugin.getLogger().fine("Discord message sent successfully");
+                                },
+                                error -> {
+                                    String errorMsg = error.getMessage();
+                                    if (errorMsg != null) {
+                                        if (errorMsg.contains("Connection reset")) {
+                                            plugin.getLogger().warning("Discord connection reset. This may be temporary. The message will be retried on next attempt.");
+                                        } else if (errorMsg.contains("Timeout")) {
+                                            plugin.getLogger().warning("Discord request timeout. Network may be slow.");
+                                        } else if (errorMsg.contains("403") || errorMsg.contains("Forbidden")) {
+                                            plugin.getLogger().severe("Discord permission denied. Check bot permissions in the channel.");
+                                        } else {
+                                            plugin.getLogger().severe("Failed to send Discord message: " + errorMsg);
+                                        }
+                                    } else {
+                                        plugin.getLogger().severe("Unknown error sending Discord message: " + error.getClass().getSimpleName());
+                                    }
+                                }
+                            ),
+                    error -> {
+                        if (error.getMessage() != null && error.getMessage().contains("Connection reset")) {
+                            plugin.getLogger().warning("Discord connection issue. Attempting reconnection...");
+                        } else {
+                            plugin.getLogger().warning("Error accessing Discord channel: " + error.getMessage());
+                        }
+                    }
+            );
+        } catch (Exception e) {
+            plugin.getLogger().severe("Exception in sendSimpleMessage: " + e.getMessage());
+            if (e.getMessage() != null && e.getMessage().contains("Connection reset")) {
+                plugin.getLogger().warning("Discord connection reset. This is usually temporary and will recover.");
+            }
+            e.printStackTrace();
+        }
     }
 
     public void sendSpoofAlertEmbed(String playerName, String socketIp, String spoofedIp, String spoofedUuid, String reason) {
@@ -172,5 +232,13 @@ public class DiscordBot {
             text = text.replace("%" + e.getKey() + "%", e.getValue());
         }
         return text;
+    }
+
+    public GatewayDiscordClient getClient() {
+        return this.client;
+    }
+
+    public boolean isConnected() {
+        return this.client != null;
     }
 }

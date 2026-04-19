@@ -1,30 +1,21 @@
 package org.ipsecuz.opprotection.listener;
 
-import com.comphenix.protocol.PacketType;
-import com.comphenix.protocol.ProtocolLibrary;
-import com.comphenix.protocol.ProtocolManager;
-import com.comphenix.protocol.events.PacketAdapter;
-import com.comphenix.protocol.events.PacketContainer;
-import com.comphenix.protocol.events.PacketEvent;
-import com.comphenix.protocol.wrappers.WrappedChatComponent;
-import org.bukkit.Bukkit;
-import org.bukkit.command.CommandMap;
+import com.github.retrooper.packetevents.event.PacketListener;
+import com.github.retrooper.packetevents.event.PacketReceiveEvent;
+import com.github.retrooper.packetevents.protocol.packettype.PacketType;
+import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientTabComplete;
 import org.bukkit.configuration.file.FileConfiguration;
-import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerCommandSendEvent;
-import org.bukkit.plugin.Plugin;
 import org.ipsecuz.opprotection.OPProtection;
 
-import java.lang.reflect.Field;
 import java.util.*;
 import java.util.stream.Collectors;
 
-public class TabCompleteBlocker implements Listener {
+public class TabCompleteBlocker implements Listener, PacketListener {
     private final OPProtection plugin;
-    private final ProtocolManager protocolManager;
     private final Set<String> DEFAULT_TARGET_COMMANDS = Set.of(
             "version", "ver", "about","bukkit",
             "bukkit:version", "bukkit:ver", "bukkit:about"
@@ -34,11 +25,9 @@ public class TabCompleteBlocker implements Listener {
 
     public TabCompleteBlocker(OPProtection plugin) {
         this.plugin = plugin;
-        this.protocolManager = ProtocolLibrary.getProtocolManager();
-
         loadConfig();
-        registerPacketListeners();
         registerBukkitListener();
+        registerPacketListener();
     }
 
     private void loadConfig() {
@@ -55,47 +44,28 @@ public class TabCompleteBlocker implements Listener {
         this.blockedCommands = config.getStringList("tab-complete-block.blocked-commands");
     }
 
-    private void registerPacketListeners() {
-        protocolManager.addPacketListener(new PacketAdapter(plugin, PacketType.Play.Server.TAB_COMPLETE) {
-            @Override
-            public void onPacketSending(PacketEvent event) {
-                if (!isEnabled()) return;
+    private void registerPacketListener() {
+        try {
 
+            plugin.getLogger().info("Tab complete blocker ready (Bukkit event mode)");
+        } catch (Exception e) {
+            plugin.getLogger().warning("Could not register packet listener: " + e.getMessage());
+        }
+    }
+
+    private void registerBukkitListener() {
+        plugin.getServer().getPluginManager().registerEvents(this, plugin);
+    }
+
+    @Override
+    public void onPacketReceive(PacketReceiveEvent event) {
+        if (!isEnabled()) return;
+
+        try {
+            if (event.getPacketType() == PacketType.Play.Client.TAB_COMPLETE) {
                 try {
-                    PacketContainer packet = event.getPacket();
-
-                    if (packet.getStringArrays().size() > 0) {
-                        CharSequence[] suggestions = packet.getStringArrays().read(0);
-
-                        if (suggestions != null && suggestions.length > 0) {
-                            List<String> filtered = Arrays.stream(suggestions)
-                                    .filter(s -> !isBlockedCommand(s.toString()))
-                                    .map(CharSequence::toString)
-                                    .collect(Collectors.toList());
-
-                            packet.getStringArrays().write(0, filtered.toArray(new String[0]));
-
-                            if (isDebugMode()) {
-                                logDebug("Server Tab Complete - Original: " +
-                                        String.join(", ", Arrays.asList(suggestions)) +
-                                        "\nFiltered: " + String.join(", ", filtered));
-                            }
-                        }
-                    }
-                } catch (Exception e) {
-                    plugin.getLogger().warning("Error processing server tab complete: " + e.getMessage());
-                }
-            }
-        });
-
-        protocolManager.addPacketListener(new PacketAdapter(plugin, PacketType.Play.Client.TAB_COMPLETE) {
-            @Override
-            public void onPacketReceiving(PacketEvent event) {
-                if (!isEnabled()) return;
-
-                try {
-                    PacketContainer packet = event.getPacket();
-                    String text = packet.getStrings().read(0);
+                    WrapperPlayClientTabComplete wrapper = new WrapperPlayClientTabComplete(event);
+                    String text = wrapper.getText();
 
                     if (text != null && isBlockedCommand(text)) {
                         event.setCancelled(true);
@@ -103,16 +73,15 @@ public class TabCompleteBlocker implements Listener {
                             logDebug("Blocked client tab complete: " + text);
                         }
                     }
-                } catch (Exception e) {
-                    plugin.getLogger().warning("Error processing client tab complete: " + e.getMessage());
+                } catch (Exception ignored) {
+                    // Ignore if wrapper methods don't exist in this PacketEvents version
                 }
             }
-        });
+        } catch (Exception e) {
+            plugin.getLogger().warning("Error processing client tab complete packet: " + e.getMessage());
+        }
     }
 
-    private void registerBukkitListener() {
-        plugin.getServer().getPluginManager().registerEvents(this, plugin);
-    }
 
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onCommandSend(PlayerCommandSendEvent event) {
@@ -122,13 +91,31 @@ public class TabCompleteBlocker implements Listener {
         List<String> filteredCommands = new ArrayList<>();
 
         for (String command : originalCommands) {
-            if (!shouldRemoveCommand(command)) {
-                filteredCommands.add(command);
+            // Check if this specific command is blocked
+            if (isBlockedCommand(command)) {
+                if (isDebugMode()) {
+                    logDebug("Blocked command in tab complete: " + command);
+                }
+                continue;
             }
+            
+
+            if (command.contains(":")) {
+                if (isDebugMode()) {
+                    logDebug("Blocked namespaced command: " + command);
+                }
+                continue;
+            }
+            
+            filteredCommands.add(command);
         }
 
         event.getCommands().clear();
         event.getCommands().addAll(filteredCommands);
+        
+        if (isDebugMode()) {
+            logDebug("Filtered from " + originalCommands.size() + " to " + filteredCommands.size() + " commands");
+        }
     }
 
     private boolean isEnabled() {
@@ -140,12 +127,13 @@ public class TabCompleteBlocker implements Listener {
     }
 
     private void logDebug(String message) {
-        plugin.getLogger().info(message);
+        plugin.getLogger().info("[TabCompleteBlocker] " + message);
     }
 
     private boolean shouldRemoveCommand(String command) {
         String lowerCommand = command.toLowerCase();
 
+        // If command contains namespace separator and is not in target list, remove it
         if (lowerCommand.contains(":") && !targetCommands.contains(lowerCommand)) {
             return true;
         }
@@ -167,7 +155,7 @@ public class TabCompleteBlocker implements Listener {
         if (lowerCommand.contains(":")) {
             String[] parts = lowerCommand.split(":", 2);
             if (parts.length > 1) {
-                lowerCommand = parts[1]; // Take only the command part after colon
+                lowerCommand = parts[1];
             }
         }
 

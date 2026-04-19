@@ -40,6 +40,14 @@ public class CommandBlocker implements Listener {
             return;
         }
 
+        if (event.getPlayer().isOp() && this.plugin.getDiscordSyncModule().commandRequiresSync(checkCmd)) {
+            if (!this.plugin.getDiscordSyncModule().isPlayerVerified(event.getPlayer())) {
+                event.setCancelled(true);
+                this.plugin.getDiscordSyncModule().handleUnauthorizedCommand(event.getPlayer(), checkCmd);
+                return;
+            }
+        }
+
         if (this.isCommandBlocked(msg, "disabled-commands")) {
             event.setCancelled(true);
 
@@ -88,11 +96,13 @@ public class CommandBlocker implements Listener {
             }
         }
 
+        String commandName = lowerCommand.split("\\s+")[0];
+
         List<String> blockedCommands = this.plugin.getConfig().getStringList(configPath);
 
         for (String blocked : blockedCommands) {
             String blockedLower = blocked.toLowerCase();
-            if (lowerCommand.startsWith(blockedLower)) {
+            if (commandName.equals(blockedLower)) {
                 return true;
             }
         }

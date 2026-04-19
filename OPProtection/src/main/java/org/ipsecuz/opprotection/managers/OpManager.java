@@ -42,6 +42,7 @@ import org.bukkit.plugin.Plugin;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitRunnable;
+import org.bukkit.util.Vector;
 import org.bukkit.scheduler.BukkitTask;
 import org.ipsecuz.opprotection.OPProtection;
 
@@ -53,7 +54,6 @@ public class OpManager implements Listener {
     private Set<String> disabledCommandsRaw;
     private List<String> logoutActions;
 
-    // Maps
     private final Map<UUID, Boolean> opPassConfirmed = new ConcurrentHashMap<>();
     private final Map<UUID, ItemStack[]> savedInventories = new ConcurrentHashMap<>();
     private final Map<UUID, Object> countdownTasks = new ConcurrentHashMap<>();
@@ -205,6 +205,15 @@ public class OpManager implements Listener {
             cmdRaw = cmdRaw.split(":")[1];
         }
 
+        // Block all commands except /oppass when waiting for 2FA code
+        if (isTwoFAReady(p)) {
+            if (!cmdRaw.equals("oppass")) {
+                event.setCancelled(true);
+                this.plugin.msg(p, "oppass_2fa_waiting");
+                return;
+            }
+        }
+
         if (cmdRaw.equals("oppass")) {
             event.setCancelled(true);
             if (!this.opWhitelist.contains(p.getName())) {
@@ -276,8 +285,8 @@ public class OpManager implements Listener {
         }
 
         if (isLocked(p) && !isConfirmed(p)) {
-            Set<String> allowed = getAuthCommands();
-            allowed.add("oppass");
+            Set<String> allowed = getAuthCommands(); 
+            allowed.add("oppass");  
 
             boolean isAllowed = false;
             for (String s : allowed) {
@@ -308,26 +317,26 @@ public class OpManager implements Listener {
             String targetName = parts[1];
             Player target = Bukkit.getPlayerExact(targetName);
             if (target != null && target.isOnline() && this.opWhitelist.contains(target.getName())) {
-                Player currentPlayer = target;
-                this.runDelayed(() -> {
-                    if (currentPlayer.isOp() && !this.isConfirmed(currentPlayer)) {
-                        if (isIpRecognized(p)) {
-                            setConfirmed(p, true);
-                            this.plugin.getLogger().info("Auto-login OP for " + p.getName() + " (IP Match)");
+                this.runOnMain(() -> {
+                    if (!target.isOnline()) return; 
+                    if (target.isOp() && !this.isConfirmed(target)) {
+                        if (isIpRecognized(target)) {  
+                            setConfirmed(target, true); 
+                            this.plugin.getLogger().info("Auto-login OP for " + target.getName() + " (IP Match)");
                         } else {
-                            this.awaitingConsoleConfirm.remove(p.getUniqueId());
+                            this.awaitingConsoleConfirm.remove(target.getUniqueId()); 
 
                             boolean useDiscord = this.plugin.getConfig().getBoolean("discord.use-2fa", false) && this.plugin.getDiscord() != null;
                             if (useDiscord) {
-                                this.setVerificationMethod(p, VerificationMethod.DISCORD);
-                                this.generate2FACode(p, null);
-                                this.setTwoFAReady(p, true);
+                                this.setVerificationMethod(target, VerificationMethod.DISCORD); 
+                                this.generate2FACode(target, null); 
+                                this.setTwoFAReady(target, true);  
                             }
-                            this.lockPlayer(p);
-                            p.sendMessage(ChatColor.RED + "You have just regained OP privileges. Please verify to continue!");
+                            this.lockPlayer(target);
+                            target.sendMessage(ChatColor.RED + "You have just regained OP privileges. Please verify to continue!");  // FIX: Use 'target' not 'p'
                         }
                     }
-                }, 1L);
+                });
             }
         }
 
@@ -349,6 +358,8 @@ public class OpManager implements Listener {
         Runnable checkTask = () -> {
             for (Player p : Bukkit.getOnlinePlayers()) {
                 Runnable playerCheck = () -> {
+                    if (!p.isOnline()) return;  // Safety check
+                    
                     UUID uuid = p.getUniqueId();
                     boolean currentOpStatus = p.isOp() || this.hasLuckPermsStar(p);
                     boolean wasOp = this.lastOpStatus.getOrDefault(uuid, false);
@@ -358,28 +369,35 @@ public class OpManager implements Listener {
                             this.runOnMain(() -> {
                                 if (!p.isOnline()) return;
                                 p.setOp(false);
-                                Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "ban " + p.getName() + " You don't have permission");
+                                Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "ban " + p.getName() + " Lấy OP hả mậy");
                                 this.plugin.getLogger().warning(p.getName() + " cố lấy OP trái phép -> Ban.");
                             });
                         } else if (!this.isConfirmed(p)) {
-                            if (isIpRecognized(p)) {
-                                setConfirmed(p, true);
-                                this.plugin.getLogger().info("Auto-login OP for " + p.getName() + " (IP Match)");
-                            } else {
-                                boolean useDiscord = this.plugin.getConfig().getBoolean("discord.use-2fa", false) && this.plugin.getDiscord() != null;
-                                if (useDiscord) {
-                                    this.setVerificationMethod(p, VerificationMethod.DISCORD);
-                                    this.generate2FACode(p, null);
-                                    this.setTwoFAReady(p, true);
+                            // Schedule state changes on main thread
+                            this.runOnMain(() -> {
+                                if (!p.isOnline()) return;
+                                if (isIpRecognized(p)) {
+                                    setConfirmed(p, true);
+                                    this.plugin.getLogger().info("Auto-login OP for " + p.getName() + " (IP Match)");
+                                } else {
+                                    boolean useDiscord = this.plugin.getConfig().getBoolean("discord.use-2fa", false) && this.plugin.getDiscord() != null;
+                                    if (useDiscord) {
+                                        this.setVerificationMethod(p, VerificationMethod.DISCORD);
+                                        this.generate2FACode(p, null);
+                                        this.setTwoFAReady(p, true);
+                                    }
+                                    this.lockPlayer(p);
                                 }
-                                this.lockPlayer(p);
-                            }
+                            });
                         }
                     } else if (!currentOpStatus && wasOp) {
-                        this.opPassConfirmed.remove(uuid);
-                        this.isLocked.put(uuid, false);
-                        this.awaitingConsoleConfirm.remove(uuid);
-                        this.plugin.getLogger().info("Reset OP confirmation for " + p.getName() + " (lost OP status)");
+                        this.runOnMain(() -> {
+                            if (!p.isOnline()) return;
+                            this.opPassConfirmed.remove(uuid);
+                            this.isLocked.put(uuid, false);
+                            this.awaitingConsoleConfirm.remove(uuid);
+                            this.plugin.getLogger().info("Reset OP confirmation for " + p.getName() + " (lost OP status)");
+                        });
                     }
                     this.lastOpStatus.put(uuid, currentOpStatus);
                 };
@@ -387,7 +405,9 @@ public class OpManager implements Listener {
                 if (isFolia) {
                     try {
                         p.getScheduler().run(plugin, t -> playerCheck.run(), null);
-                    } catch (Exception e) {}
+                    } catch (Exception e) {
+                        plugin.getLogger().warning("Error checking OP status for " + p.getName() + ": " + e.getMessage());
+                    }
                 } else {
                     playerCheck.run();
                 }
@@ -477,22 +497,42 @@ public class OpManager implements Listener {
     public boolean verify2FACodeInput(Player p, String code) {
         UUID uuid = p.getUniqueId();
         String storedCode = this.player2FACodes.get(uuid);
-        if (storedCode != null && storedCode.equals(code)) {
-            unlockPlayer(p);
+        Long codeExpireTime = this.codeExpiry.get(uuid);
+        
+        // Check if code exists
+        if (storedCode == null) {
+            this.plugin.msg(p, "oppass_2fa_code_already_sent");
+            return false;
+        }
+        
+        // Check if code expired
+        if (codeExpireTime != null && System.currentTimeMillis() > codeExpireTime) {
+            this.plugin.msg(p, "oppass_2fa_code_expired");
             this.player2FACodes.remove(uuid);
             this.codeExpiry.remove(uuid);
             this.setTwoFAReady(p, false);
-
-            boolean useDiscord = this.plugin.getConfig().getBoolean("discord.use-2fa", false) && this.plugin.getDiscord() != null;
-            if (useDiscord) {
-                String ip = p.getAddress() != null ? p.getAddress().getAddress().getHostAddress() : "unknown";
-                this.plugin.getDiscord().sendEmbed("verified", Map.of("player", p.getName(), "ip", ip), false);
-            }
-
-            this.plugin.msg(p, "oppass_2fa_correct");
-            return true;
+            return false;
         }
-        return false;
+        
+        // Check if code matches
+        if (!storedCode.equals(code)) {
+            this.plugin.msg(p, "oppass_2fa_incorrect");
+            return false;
+        }
+        
+        unlockPlayer(p);
+        this.player2FACodes.remove(uuid);
+        this.codeExpiry.remove(uuid);
+        this.setTwoFAReady(p, false);
+
+        boolean useDiscord = this.plugin.getConfig().getBoolean("discord.use-2fa", false) && this.plugin.getDiscord() != null;
+        if (useDiscord) {
+            String ip = p.getAddress() != null ? p.getAddress().getAddress().getHostAddress() : "unknown";
+            this.plugin.getDiscord().sendEmbed("verified", Map.of("player", p.getName(), "ip", ip), false);
+        }
+
+        this.plugin.msg(p, "oppass_2fa_correct");
+        return true;
     }
 
     public boolean isAwaitingConsole(Player p) {
@@ -520,6 +560,9 @@ public class OpManager implements Listener {
         }
 
         Runnable lockActions = () -> {
+            if (p.isOp()) {
+                p.setOp(false);
+            }
             p.getInventory().clear();
             p.setWalkSpeed(0.0f);
             if (p.getGameMode() != GameMode.SPECTATOR) p.setGameMode(GameMode.ADVENTURE);
@@ -553,11 +596,9 @@ public class OpManager implements Listener {
                     Runnable timeoutAction = () -> {
                         removeBlind(p);
 
-                        // --- FIX: Dùng runOnMain để chạy lệnh ban trên Folia ---
                         this.runOnMain(() ->
                                 Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "ban " + p.getName() + " Hết thời gian xác minh OP!")
                         );
-                        // ------------------------------------------------
 
                         p.kickPlayer(plugin.getMessage("op_verification_timeout_kick"));
                     };
@@ -664,8 +705,8 @@ public class OpManager implements Listener {
         this.removeTemporaryPermission(p);
         this.lastCommandTimestamp.remove(uuid);
 
-        if (this.logoutActions != null && !this.logoutActions.isEmpty()) {
-            if (this.opWhitelist.contains(p.getName())) {
+        if (this.opWhitelist.contains(p.getName()) && this.isLocked.getOrDefault(uuid, false) == false) {
+            if (this.logoutActions != null && !this.logoutActions.isEmpty()) {
                 for (String action : this.logoutActions) {
                     String cmd = action.replace("%player%", p.getName());
                     this.runOnMain(() -> Bukkit.dispatchCommand(Bukkit.getConsoleSender(), cmd));
@@ -744,6 +785,11 @@ public class OpManager implements Listener {
     public String getOpPassword() { return this.opPassword; }
     public Set<String> getDisabledCommandsRaw() { return this.disabledCommandsRaw; }
 
+    /**
+     * Get list of allowed commands for unverified OP players
+     * These commands can be used by sivilians (players without OP)
+     * Once player verifies OP (isConfirmed = true), they can use any command + chat
+     */
     public Set<String> getAuthCommands() {
         return new HashSet<>(this.plugin.getConfig().getStringList("allowed-commands"));
     }
@@ -835,8 +881,9 @@ public class OpManager implements Listener {
             return;
         }
         String code = String.valueOf(new Random().nextInt(900000) + 100000);
+        long codeTimeoutMs = this.plugin.getConfig().getLong("discord.two-fa-code-timeout-seconds", 60L) * 1000;
         this.player2FACodes.put(uuid, code);
-        this.codeExpiry.put(uuid, now + 60000L);
+        this.codeExpiry.put(uuid, now + codeTimeoutMs);
         if (discordId != null) this.discordToPlayer.put(discordId, uuid);
 
         boolean useDiscord = this.plugin.getConfig().getBoolean("discord.use-2fa", false) && this.plugin.getDiscord() != null;
@@ -853,6 +900,15 @@ public class OpManager implements Listener {
     public boolean verify2FACode(Player player, String code) {
         UUID uuid = player.getUniqueId();
         String storedCode = this.player2FACodes.get(uuid);
+        Long codeExpireTime = this.codeExpiry.get(uuid);
+        
+        // Check if code expired
+        if (codeExpireTime != null && System.currentTimeMillis() > codeExpireTime) {
+            this.player2FACodes.remove(uuid);
+            this.codeExpiry.remove(uuid);
+            return false;
+        }
+        
         if (storedCode != null && storedCode.equals(code)) {
             this.setTwoFAReady(player, true);
             this.cancelCountdown(uuid);
@@ -926,9 +982,27 @@ public class OpManager implements Listener {
     public void onChat(AsyncChatEvent event) {
         Player p = (Player) event.getPlayer();
 
-        if (isLocked(p) && !isConfirmed(p)) {
+        boolean playerTwoFAReady = isTwoFAReady(p);
+        boolean playerLocked = isLocked(p);
+        boolean playerConfirmed = isConfirmed(p);
+        
+        if (playerTwoFAReady || (playerLocked && !playerConfirmed)) {
             event.setCancelled(true);
-            p.sendMessage(ChatColor.RED + "Bạn đang bị khóa vui lòng xác minh OP trước!");
+            
+            Runnable sendMessage = () -> {
+                if (!p.isOnline()) return;
+                if (playerTwoFAReady) {
+                    this.plugin.msg(p, "oppass_2fa_waiting");
+                } else {
+                    p.sendMessage(ChatColor.RED + "Bạn đang bị khóa vui lòng xác minh OP trước!");
+                }
+            };
+            
+            if (this.isFolia) {
+                p.getScheduler().run(plugin, task -> sendMessage.run(), null);
+            } else {
+                Bukkit.getScheduler().runTask(plugin, sendMessage);
+            }
         }
     }
 
@@ -937,8 +1011,9 @@ public class OpManager implements Listener {
         Player p = event.getPlayer();
 
         if (isLocked(p) && !isConfirmed(p)) {
-            if (event.getFrom().getX() != event.getTo().getX() || event.getFrom().getZ() != event.getTo().getZ()) {
+            if (event.getFrom().getX() != event.getTo().getX() || event.getFrom().getZ() != event.getTo().getZ() || event.getFrom().getY() != event.getTo().getY()) {
                 event.setCancelled(true);
+                p.setVelocity(new Vector(0, 0, 0));
 
                 if (this.isFolia) {
                     p.teleportAsync(event.getFrom(), org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.PLUGIN);

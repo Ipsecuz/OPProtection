@@ -17,6 +17,7 @@ tab-complete-block:
     - "ver"
     - "version"
     - "about"
+    - "bukkit"
     - "bukkit:ver"
     - "bukkit:version"
     - "bukkit:about"
@@ -24,6 +25,28 @@ tab-complete-block:
     - "minecraft:version"
     - "minecraft:about"
     - "icanhasbukkit"
+    - "paper:version"
+    - "folia:version"
+    - "plugins"
+    - "pl"
+    - "plugin"
+    - "server"
+    - "help"
+    - "?"
+    - "reload"
+    - "rl"
+    - "stop"
+    - "restart"
+    - "reload-all"
+    - "luckperms"
+    - "lp"
+    - "luckperms:lp"
+    - "luckperms:user"
+    - "luckperms:group"
+    - "luckperms:track"
+    - "essentials"
+    - "ess"
+    - "essentials:*"
 
 # Thêm lệnh vào để chặn lệnh í:>
 disabled-commands:
@@ -49,16 +72,18 @@ disabled-commands:
   - perms
   - perm
   - permission
+
 # CHẶN LỆNH RIÊNG CHO CONSOLE
 console-blocked-cmd:
-  enabled: true
+  enabled: false
   commands:
     - "about"
     - "stop"
 
-# Lệnh được phép dùng khi chưa xác minh OP
+# Lệnh được phép dùng khi chưa xác minh OP (dành cho sivilians)
+# Khi xác minh OP thành công → được phép chat + sài tất cả lệnh (trừ disabled-commands)
+# Khi chưa xác minh OP → chỉ được sài lệnh trong danh sách này + /oppass
 allowed-commands:
-  - oppass
   - login
   - l
   - register
@@ -69,12 +94,15 @@ logout-actions:
   - "lp user %player% permission unset *"
   - "gamemode survival %player%"
 
-# Discord bot cho 2fa (true thì true hết còn false thì false hết ở enabled và use-2fa)
+# Discord bot cho 2fa (true thì true hết còn false thì false hết ở enabled và use-2fa), bật xong thì restart
+# Nếu bạn bật discord thì lướt xuống bật lun discord-sync nhé (không bật cũng không sao)
 discord:
   enabled: false
   token: "YOUR_BOT_TOKEN"
   channel-id: "YOUR_CHANNEL_ID"
   use-2fa: false
+  # Thời gian code hết hạn (tính bằng giây) - sau thời gian này thì mã không dùng được nữa
+  two-fa-code-timeout-seconds: 60  # 60 giây = 1 phút
 
 # Anti VPN
 geoip:
@@ -97,3 +125,44 @@ domain-whitelist:
   allowed-domains:
     - "play.myserver.com"
     - "mc.yourdomain.net"
+  messages:
+    kick-message: "&cBạn không được phép kết nối trực tiếp vào server này!\n&eVui lòng sử dụng domain chính thống: &f%domain%"
+    no-domain-detected: "&cKhông thể xác định domain kết nối. Vui lòng kết nối lại qua domain chính thức."
+
+# Discord Sync Module - Yêu cầu xác minh Discord cho các command trong whitelist
+discord-sync:
+  enabled: false  # Bật/tắt toàn bộ module
+  # Hành động khi player không được verify chạy command yêu cầu sync
+  # Options: kick, deop, shutdown, stop
+  unauthorized-action: "kick"  # Đóng server nếu hacker cố gắng
+  # Timeout xác minh cũng sẽ là time sử dụng lệnh và hết time cần verify lại(tính bằng giây)
+  verification-timeout-seconds: 300  # 5 phút
+  # Log broadcast khi player verify thành công
+  log-to-console: true
+  # Danh sách command yêu cầu Discord sync - Thêm lệnh vào để bắt buộc xác minh Discord
+  commands:
+    - /reload
+    - /stop
+    - /restart
+    - /op
+    - /deop
+    - /ban
+    - /kick
+    - /save-all
+  # Các message liên quan đến xác minh Discord
+  messages:
+    # Warning message khi player cố gắng sử dụng command yêu cầu Discord sync
+    command-requires-sync: "&cLệnh này yêu cầu xác minh Discord!"
+    # Message yêu cầu verify
+    verify-required: "&eVui lòng xác minh qua Discord trước khi sử dụng lệnh này."
+    # Message khi action là deop
+    deop-message: "&cQuyền OP đã bị gỡ do lỗi xác minh bảo mật!"
+    # Message khi action là shutdown/stop
+    shutdown-message: "&c Server đang đóng vì phát hiện nghi vấn bảo mật..."
+    # Message khi action là kick
+    kick-message: "&c[Discord-Sync] Bạn đã bị kick vì cố gắng sử dụng lệnh bảo mật mà chưa xác minh Discord!"
+
+f3-brand-spoof:
+  enabled: true             #F3 ở trong server là thấy
+  fake-brand: "&6OPPROT&aECTION"
+  debug: false        

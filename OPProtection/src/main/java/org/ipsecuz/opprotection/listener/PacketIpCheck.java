@@ -82,9 +82,16 @@ public class PacketIpCheck implements Listener {
             }
 
             if (!isAllowed) {
-                String kickMsg = ChatColor.translateAlternateColorCodes('&', 
-                    "&cBạn không được phép kết nối trực tiếp vào server này!\n&eVui lòng sử dụng domain chính thống: &f" + 
-                    (allowedDomains.isEmpty() ? "Unknown" : allowedDomains.get(0)));
+                String kickMsg = ChatColor.translateAlternateColorCodes('&',
+                        this.plugin.getConfig().getString(
+                            "domain-whitelist.messages.kick-message",
+                            "&cBạn không được phép kết nối trực tiếp vào server này!\n&eVui lòng sử dụng domain chính thống: &f%domain%"
+                        )
+                );
+                
+                // Replace placeholder with actual domain
+                String firstDomain = allowedDomains.isEmpty() ? "Unknown" : allowedDomains.get(0);
+                kickMsg = kickMsg.replace("%domain%", firstDomain);
                 
                 event.disallow(AsyncPlayerPreLoginEvent.Result.KICK_OTHER, kickMsg);
                 return;

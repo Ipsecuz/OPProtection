@@ -4,6 +4,7 @@ prefix: "&7[&cOPProtection&7] "
 no_permission: "&cBạn không có quyền sử dụng lệnh này!"
 oppass_usage: "&eVui lòng nhập: /oppass <mật khẩu>"
 oppass_change_usage: "&eĐổi pass: /oppass change <cũ> <mới>"
+oppass_2fa_waiting: "&cĐang chờ xác minh 2FA! Vui lòng nhập: /oppass <code>"
 password_changed: "&aĐổi mật khẩu thành công!"
 password_wrong: "&cMật khẩu sai!"
 already_confirmed: "&aĐã xác minh thành công rồi"
@@ -23,6 +24,7 @@ oppass_confirm_success_player: "&aXác minh OP thành công qua console!"
 # --- 2FA / DISCORD ---
 oppass_2fa_correct: "&aMã 2FA chính xác! Vui lòng chờ admin xác minh trên Discord."
 oppass_2fa_incorrect: "&cMã 2FA không đúng!"
+oppass_2fa_code_expired: "&cMã xác minh đã hết hạn! Vui lòng yêu cầu mã mới."
 oppass_2fa_code_already_sent: "&aMã code đã được gửi, hãy lên discord check!"
 oppass_2fa_discord_sent: "&aLên discord check đê!"
 oppass_2fa_wait_admin: "&aĐợi admin xác minh trên discord nha"
@@ -59,3 +61,8 @@ reload_success: "&aReload OPProtection thành công!"
 
 # --- ANTICHEAT ---
 op_fake_ban_reason: "&cPhát hiện cố tình chiếm quyền OP trái phép (Hack/Exploit)!"
+
+# --- DISCORD SYNC MODULE ---
+discord_sync_kick_message: "&cBạn không được xác minh trên Discord!\n&eVui lòng verify tài khoản Discord trước khi sử dụng lệnh này."
+discord_sync_deop_message: "&cBạn đã bị hủy OP vì không xác minh Discord!\n&eHãy liên hệ admin để verify lại."
+discord_verify_broadcast: "&a✓ &e%player% &avừa xác minh tài khoản Discord thành công!"
