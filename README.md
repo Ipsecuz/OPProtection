@@ -30,7 +30,7 @@ Với các tính năng như **xác minh đa tầng**, **chặn IP/GeoIP**, và *
 
 ## 📥 Cài Đặt
 
-1. Tải bản mới nhất tại [**Releases**](https://github.com/Ipsecuz/OPProtection/releases/tag/minecraft)) 
+1. Tải bản mới nhất tại [**Releases**](https://github.com/Ipsecuz/OPProtection/releases/)) 
 2. Hoặc phiên bản cũ hoàn chỉnh không support folia [**Old Version**](https://www.mediafire.com/file/rcbnb0ack1wsnxg/OPProtection-2.3.3.jar/file)
 3. Đặt file `.jar` vào thư mục `plugins/`.  
 4. Khởi động lại server hoặc chạy lệnh `/reload`.  
