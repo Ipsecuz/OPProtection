@@ -125,6 +125,10 @@ Lệnh	Mô tả	Quyền
 
 /opreload	Tải lại toàn bộ cấu hình plugin	-> Console
 
+/verify - trước để nhận được mã xác minh hãy lên trên discord nhận mã từ bot
+
+/opverify <mã> - nhập để xác minh liên kết tài khoản thành công MC với discord
+
 🤝 Đóng Góp
 
 Chúng tôi luôn hoan nghênh mọi đóng góp từ cộng đồng!
