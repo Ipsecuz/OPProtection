@@ -24,6 +24,7 @@ Với các tính năng như **xác minh đa tầng**, **chặn IP/GeoIP**, và *
 | 🕵️ | **Chống IP/UUID Spoofing** | Phát hiện và ngăn nỗ lực giả mạo danh tính |
 | ✅ | **Tương Thích Folia** | Hỗ trợ hoàn toàn PaperMC và Folia mới nhất |
 | 🔄 | **Tự Động Hành Động** | Gỡ OP và un-permission khi người chơi logout |
+| 🔗 | **DiscordSync** | Bắt buộc liên kết Discord + Minecraft trước khi sử dụng hot reload command |
 
 ---
 
@@ -37,7 +38,7 @@ Với các tính năng như **xác minh đa tầng**, **chặn IP/GeoIP**, và *
 6. Thêm tên admin của bạn vào danh sách `op-whitelist` trong `config.yml`.  
 
 ## Dependencies (Phụ thuộc)
-1. ProtocolLib (bắt buộc)
+1. Packetenvents(bắt buộc)
 ---
 
 ## ⚙️ Cấu Hình
