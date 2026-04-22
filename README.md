@@ -1,6 +1,6 @@
 # 🛡️ OPProtection - Bảo Vệ Toàn Diện Cho Server Minecraft Của Bạn 🔐  
 
-![Version](https://img.shields.io/badge/version-2.5-blue.svg)
+![Version](https://img.shields.io/badge/version-2.5.3Folia-blue.svg)
 ![Java](https://img.shields.io/badge/java-17%2B-orange.svg)
 ![Platform](https://img.shields.io/badge/platform-PaperMC%20%7C%20Folia-lightgrey.svg)
 
