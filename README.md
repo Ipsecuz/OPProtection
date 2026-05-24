@@ -14,28 +14,35 @@ Với các tính năng như **xác minh đa tầng**, **chặn IP/GeoIP**, và *
 ## ✨ Tính Năng Nổi Bật
 
 | 🔰 | Tính năng | Mô tả |
-|----|------------|--------|
-| 🔐 | **Xác Minh OP Đa Tầng** | Yêu cầu xác minh qua mật khẩu hoặc 2FA qua Discord |
-| 🌍 | **Chặn GeoIP (Anti-VPN)** | Tự động chặn người chơi từ quốc gia không được phép |
-| 🚨 | **Chế Độ Khẩn Cấp (Emergency Mode)** | Khóa toàn bộ server ngay khi có sự cố |
+|----|-----------|-------|
+| 🔐 | **Xác Minh OP Đa Tầng** | Yêu cầu xác minh bằng mật khẩu OPProtection và/hoặc Discord 2FA |
+| 🔒 | **Mật Khẩu OP Dạng Hash** | Không lưu mật khẩu thô trong config, sử dụng hash bảo mật PBKDF2 |
+| 🕶️ | **Ẩn `/oppass <pass>` Khỏi Console Log** | Ngăn việc lộ mật khẩu khi người chơi nhập `/oppass <password>` |
+| 🌐 | **Domain Whitelist** | Chỉ cho phép người chơi join bằng domain hợp lệ |
+| 🛡️ | **Strict Proxy IP** | Chặn fake proxy bằng cách chỉ cho backend nhận kết nối từ IP proxy chính thức |
+| 👑 | **Premium Auth Cho OP Whitelist** | Kiểm tra acc premium/cracked cho những người nằm trong `op-whitelist` |
+| 🧾 | **Exact Name Case Check** | Bắt buộc đúng chữ hoa/thường theo tên Minecraft premium chính thức |
+| 🌍 | **Chặn GeoIP / Anti-VPN** | Tự động chặn người chơi từ quốc gia không được phép |
+| 🚨 | **Chế Độ Khẩn Cấp** | Khóa toàn bộ server ngay khi có sự cố bảo mật |
 | 📢 | **Tích Hợp Discord** | Gửi thông báo và xác minh 2FA qua Discord |
-| 🛡️ | **Chống Lệnh Nguy Hiểm** | Chặn các lệnh nhạy cảm như `/op`, `/plugins`, `/stop` |
+| 🛑 | **Chống Lệnh Nguy Hiểm** | Chặn các lệnh nhạy cảm như `/op`, `/plugins`, `/stop`, `/reload` |
 | 🚫 | **Chặn Tab-Complete** | Ngăn hiển thị lệnh bị cấm khi người chơi gõ tab |
 | 🕵️ | **Chống IP/UUID Spoofing** | Phát hiện và ngăn nỗ lực giả mạo danh tính |
-| ✅ | **Tương Thích Folia** | Hỗ trợ hoàn toàn PaperMC và Folia mới nhất |
-| 🔄 | **Tự Động Hành Động** | Gỡ OP và un-permission khi người chơi logout |
+| 🔄 | **Tự Động Hành Động Khi Logout** | Tự động gỡ OP hoặc permission khi admin logout |
 | 🔗 | **DiscordSync** | Bắt buộc liên kết Discord + Minecraft trước khi sử dụng hot reload command |
+| ✅ | **Tương Thích Folia** | Hỗ trợ PaperMC và Folia |
 
 ---
 
 ## 📥 Cài Đặt
 
-1. Tải bản mới nhất tại [**Releases**](https://github.com/Ipsecuz/OPProtection/releases/)) 
-2. Hoặc phiên bản cũ hoàn chỉnh không support folia [**Old Version**](https://www.mediafire.com/file/rcbnb0ack1wsnxg/OPProtection-2.3.3.jar/file)
-3. Đặt file `.jar` vào thư mục `plugins/`.  
-4. Khởi động lại server hoặc chạy lệnh `/reload`.  
-5. Cấu hình file `config.yml`, `messages.yml`, `embed_discord.yml` theo nhu cầu.  
-6. Thêm tên admin của bạn vào danh sách `op-whitelist` trong `config.yml`.  
+1. Tải bản mới nhất tại [**Releases**](https://github.com/Ipsecuz/OPProtection/releases/).
+2. Hoặc tải phiên bản cũ hoàn chỉnh nhưng không hỗ trợ Folia tại [**Old Version**](https://www.mediafire.com/file/rcbnb0ack1wsnxg/OPProtection-2.3.3.jar/file).
+3. Đặt file `.jar` vào thư mục `plugins/`.
+4. Khởi động lại server.
+5. Cấu hình các file `config.yml`, `messages.yml`, `embed_discord.yml` theo nhu cầu.
+6. Thêm tên admin của bạn vào danh sách `op-whitelist` trong `config.yml`.
+7. Sau khi plugin load thành công, tạo mật khẩu OPProtection bằng lệnh console: oppass createpass <mật-khẩu-bạn-tự-nhập>
 
 ## Dependencies (Phụ thuộc)
 1. Packetenvents(bắt buộc)
