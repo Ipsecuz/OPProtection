@@ -1,13 +1,27 @@
-# Anti UUid/Ip Spoof
-ip-forwarding: false  # true hoặc false, tuỳ server có sài Bungee/Velocity forwarding không
+# Forwarding / proxy mode. Bật true khi backend chạy sau Velocity/Bungee forwarding.
+ip-forwarding: false
 
-# Thời gian yêu cầu xác minh lại OP (tính bằng phút/minutes)
+# Thời gian yêu cầu xác minh lại OP, tính bằng phút.
 op-verification-reset-time: 20
 
-# Thêm tên bạn vào đây nhé, thay đổi pass với lại thay thời gian nhá
+# Danh sách tài khoản được phép dùng quy trình OPProtection.
 op-whitelist:
   - YourName
-op-password: pass_vao_day #đặt pass sao cũng được
+
+# Không nhập mật khẩu thô tại đây. Dùng console:
+#   oppass createpass <mật-khẩu>
+#   oppass resetpass
+# Giá trị bên dưới sẽ là PBKDF2 hash sau khi tạo/reset.
+op-password: ""
+
+password-security:
+  min-length: 8
+  generated-length: 24
+
+secure-command-input:
+  # Chặn packet /oppass trước khi Paper/Spigot ghi raw command ra console log.
+  hide-oppass-from-console-log: true
+
 pass-timeout: 60
 
 tab-complete-block:
@@ -48,7 +62,7 @@ tab-complete-block:
     - "ess"
     - "essentials:*"
 
-# Thêm lệnh vào để chặn lệnh í:>
+# Danh sách lệnh bị chặn cho OP đã đăng nhập nhằm giảm rủi ro thao tác nguy hiểm.
 disabled-commands:
   - op
   - pl
@@ -73,14 +87,14 @@ disabled-commands:
   - perm
   - permission
 
-# CHẶN LỆNH RIÊNG CHO CONSOLE
+# Chặn riêng một số lệnh từ console nếu cần.
 console-blocked-cmd:
   enabled: false
   commands:
     - "about"
     - "stop"
 
-# Lệnh được phép dùng khi chưa xác minh OP (dành cho sivilians)
+# Lệnh được phép dùng khi chưa xác minh OP
 # Khi xác minh OP thành công → được phép chat + sài tất cả lệnh (trừ disabled-commands)
 # Khi chưa xác minh OP → chỉ được sài lệnh trong danh sách này + /oppass
 allowed-commands:
@@ -88,14 +102,13 @@ allowed-commands:
   - l
   - register
 
-#(****Kiểm tra người trong whitelist op****)
+# Hành động khi tài khoản OP whitelist thoát server.
 logout-actions:
   - "deop %player%"
   - "lp user %player% permission unset *"
   - "gamemode survival %player%"
 
-# Discord bot cho 2fa (true thì true hết còn false thì false hết ở enabled và use-2fa), bật xong thì restart
-# Nếu bạn bật discord thì lướt xuống bật lun discord-sync nhé (không bật cũng không sao)
+# Discord bot cho 2FA. Sau khi bật, hãy restart server để module khởi tạo sạch.
 discord:
   enabled: false
   token: "YOUR_BOT_TOKEN"
@@ -111,7 +124,7 @@ geoip:
     - "VN"  # Việt Nam
   block-message: "&cQuốc gia của bạn không được phép truy cập server!"
 
-#Anti-Spam commands
+# Giảm spam command
 anti-spam:
   enabled: false
   # Thời gian tối thiểu giữa 2 lệnh (giây)
@@ -122,14 +135,46 @@ anti-spam:
 # Người chơi phải vào qua các domain trong danh sách này mới được accept
 domain-whitelist:
   enabled: false
+  # Chỉ accept hostname trùng chính xác các domain dưới đây. Không dùng startsWith để tránh play.myserver.com.evil.
   allowed-domains:
     - "play.myserver.com"
     - "mc.yourdomain.net"
+  # Nếu bật thì subdomain như survival.play.myserver.com cũng được phép. Mặc định false để chặt nhất.
+  allow-subdomains: false
+  # Lưu ý: nếu Velocity và backend cùng máy, ví dụ: allowed-proxy-ips thường là 127.0.0.1. Khi đó plugin không thể phân biệt
+  # process Velocity thật với một process/proxy giả cũng chạy local; hãy dùng firewall/iptables để khóa backend port.
+  strict-proxy-ip:
+    enabled: true
+    # Thêm IP proxy thật vào đây. Hỗ trợ exact IP, IP:port, CIDR, wildcard IPv4 như 10.0.0.*
+    # Ví dụ proxy ở VPS khác: "xxx.xxx.xxx.xxx" hoặc lỡ ghi "xxx.xxx.xxx.xxx:25565" plugin cũng tự bỏ port.
+    # Nếu proxy Velocity ở cùng máy thì thêm "127.0.0.1" và đảm bảo firewall chặn bên ngoài vào backend port.
+    allowed-proxy-ips:
+      - "127.0.0.1"
+      - "::1"
+    # true = nếu quên cấu hình allowed-proxy-ips thì chặn hết để fail-closed.
+    block-when-empty: true
   messages:
     kick-message: "&cBạn không được phép kết nối trực tiếp vào server này!\n&eVui lòng sử dụng domain chính thống: &f%domain%"
     no-domain-detected: "&cKhông thể xác định domain kết nối. Vui lòng kết nối lại qua domain chính thức."
+    proxy-blocked: "&cProxy/IP kết nối không hợp lệ. Vui lòng vào server qua proxy chính thức."
 
-# Discord Sync Module - Yêu cầu xác minh Discord cho các command trong whitelist
+# Premium Auth cho người trong op-whitelist - kiểm tra nickname có premium Mojang và UUID join phải khớp UUID chính thức.
+# Dùng để chặn acc crack/offline UUID giả danh tên premium trong op-whitelist.
+premium-auth:
+  enabled: false
+  # true = nếu Mojang API lỗi/timeout thì chặn OP-whitelist để an toàn.
+  fail-closed: true
+  mojang-timeout-ms: 3000
+  cache-seconds: 3600
+  require-exact-name-case: false
+  # false = acc premium vẫn phải xác minh /oppass + 2FA như cũ.
+  # true = nếu premium UUID match thì tự bypass bước 2FA OPProtection cho người trong op-whitelist.
+  # Khuyến nghị giữ false để OP vẫn cần xác minh 2FA.
+  op-whitelist-premium-auto-bypass-2fa: false 
+  messages:
+    kick-cracked-spoof: "&cTài khoản OP whitelist phải là tài khoản premium thật.\n&eLý do: &f%reason%"
+
+# Discord Sync - Yêu cầu xác minh Discord cho các command trong whitelist
 discord-sync:
   enabled: false  # Bật/tắt toàn bộ module
   # Hành động khi player không được verify chạy command yêu cầu sync

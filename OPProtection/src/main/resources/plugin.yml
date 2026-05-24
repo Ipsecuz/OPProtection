@@ -1,5 +1,5 @@
 name: OPProtection
-version: '2.5.3-folia'
+version: '2.5.4-folia'
 main: org.ipsecuz.opprotection.OPProtection
 api-version: '1.13'
 load: POSTWORLD
@@ -9,8 +9,8 @@ softdepend: [LuckPerms]
 folia-supported: true
 commands:
   oppass:
-    description: Quản lý xác minh OP
-    usage: /<command> <password>
+    description: Quản lý xác minh OP an toàn, ẩn mật khẩu khỏi command log
+    usage: /<command> <password|createpass|resetpass|confirm|resetip>
     permission: opprotection.oppass
     permission-message: ""
   opreload:

@@ -1,7 +1,5 @@
 package org.ipsecuz.opprotection.managers;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -27,7 +25,6 @@ import net.md_5.bungee.api.chat.TextComponent;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.GameMode;
-import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -45,6 +42,7 @@ import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.util.Vector;
 import org.bukkit.scheduler.BukkitTask;
 import org.ipsecuz.opprotection.OPProtection;
+import org.ipsecuz.opprotection.security.PasswordHasher;
 
 public class OpManager implements Listener {
     private final OPProtection plugin;
@@ -119,22 +117,35 @@ public class OpManager implements Listener {
     }
 
     public boolean checkPassword(Player player, String inputPassword) {
-        String storedPass = this.plugin.getConfig().getString("data." + player.getUniqueId() + ".password");
-        String defaultPass = this.plugin.getConfig().getString("op-password");
-        String inputHashed = hash(inputPassword);
-
-        if (storedPass != null) {
-            if (storedPass.equals(inputHashed)) return true;
-            if (storedPass.equals(inputPassword)) {
-                setPassword(player, inputPassword);
-                return true;
-            }
+        if (inputPassword == null || inputPassword.isBlank()) {
+            return false;
         }
-        return defaultPass != null && defaultPass.equals(inputPassword);
+
+        String storedPass = this.plugin.getConfig().getString("data." + player.getUniqueId() + ".password");
+        if (storedPass != null && !storedPass.isBlank() && PasswordHasher.verify(inputPassword, storedPass)) {
+            if (PasswordHasher.needsRehash(storedPass)) {
+                this.plugin.getConfig().set("data." + player.getUniqueId() + ".password", PasswordHasher.hash(inputPassword));
+                this.plugin.saveConfigAsync();
+            }
+            return true;
+        }
+
+        if (this.opPassword != null && !this.opPassword.isBlank() && PasswordHasher.verify(inputPassword, this.opPassword)) {
+            if (PasswordHasher.needsRehash(this.opPassword)) {
+                String migrated = PasswordHasher.hash(inputPassword);
+                this.plugin.getConfig().set("op-password", migrated);
+                this.plugin.saveConfig();
+                this.opPassword = migrated;
+                this.plugin.getLogger().warning("[OPPass] Legacy global op-password was migrated to PBKDF2 hash.");
+            }
+            return true;
+        }
+        return false;
     }
 
     public void setPassword(Player player, String newPassword) {
-        String hashedPassword = hash(newPassword);
+        validatePasswordPolicy(newPassword);
+        String hashedPassword = PasswordHasher.hash(newPassword);
         this.plugin.getConfig().set("data." + player.getUniqueId() + ".password", hashedPassword);
         this.plugin.saveConfigAsync();
     }
@@ -151,28 +162,55 @@ public class OpManager implements Listener {
     }
 
     public boolean verifyPassword(String inputPassword) {
-        return this.opPassword != null && this.opPassword.equals(inputPassword);
+        return this.opPassword != null && PasswordHasher.verify(inputPassword, this.opPassword);
     }
 
-    private String hash(String raw) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] encodedhash = digest.digest(raw.getBytes(StandardCharsets.UTF_8));
-            StringBuilder hexString = new StringBuilder(2 * encodedhash.length);
-            for (byte b : encodedhash) {
-                String hex = Integer.toHexString(0xff & b);
-                if (hex.length() == 1) hexString.append('0');
-                hexString.append(hex);
-            }
-            return hexString.toString();
-        } catch (Exception e) {
-            e.printStackTrace();
-            return raw;
+    public void updateGlobalPassword(String hashedPassword) {
+        this.opPassword = hashedPassword;
+    }
+
+    public void setGlobalPassword(String rawPassword) {
+        validatePasswordPolicy(rawPassword);
+        String hashedPassword = PasswordHasher.hash(rawPassword);
+        this.plugin.getConfig().set("op-password", hashedPassword);
+        this.opPassword = hashedPassword;
+        this.plugin.saveConfig();
+    }
+
+    public String resetGlobalPassword() {
+        int length = Math.max(getPasswordMinLength(), this.plugin.getConfig().getInt("password-security.generated-length", 24));
+        String generated = PasswordHasher.generateRandomPassword(length);
+        setGlobalPassword(generated);
+        return generated;
+    }
+
+    public int getPasswordMinLength() {
+        return Math.max(8, this.plugin.getConfig().getInt("password-security.min-length", 8));
+    }
+
+    private void validatePasswordPolicy(String password) {
+        if (password == null || password.length() < getPasswordMinLength()) {
+            throw new IllegalArgumentException("Password must be at least " + getPasswordMinLength() + " characters");
         }
+    }
+
+    public void clearAwaitingConsole(UUID playerUUID) {
+        if (playerUUID != null) {
+            this.awaitingConsoleConfirm.remove(playerUUID);
+        }
+    }
+
+    public boolean matchesPending2FACode(Player player, String code) {
+        if (player == null || code == null) {
+            return false;
+        }
+        String storedCode = this.player2FACodes.get(player.getUniqueId());
+        return storedCode != null && storedCode.equals(code.trim());
     }
 
     @EventHandler(priority = EventPriority.HIGH)
     public void onPlayerCommand(PlayerCommandPreprocessEvent event) {
+        if (event.isCancelled()) return;
         Player p = event.getPlayer();
         String msg = event.getMessage();
 
@@ -205,7 +243,6 @@ public class OpManager implements Listener {
             cmdRaw = cmdRaw.split(":")[1];
         }
 
-        // Block all commands except /oppass when waiting for 2FA code
         if (isTwoFAReady(p)) {
             if (!cmdRaw.equals("oppass")) {
                 event.setCancelled(true);
@@ -215,72 +252,11 @@ public class OpManager implements Listener {
         }
 
         if (cmdRaw.equals("oppass")) {
+            event.setMessage("/oppass [protected]");
             event.setCancelled(true);
-            if (!this.opWhitelist.contains(p.getName())) {
-                return;
+            if (this.plugin.getCommandOPPass() != null) {
+                this.plugin.getCommandOPPass().handlePlayerCommandLine(p, msg);
             }
-
-            if (parts.length == 1) {
-                p.sendMessage(this.plugin.getMessage("oppass_usage"));
-                return;
-            }
-
-            String input = msg.substring(parts[0].length()).trim();
-
-            if (parts[1].equalsIgnoreCase("change")) {
-                if (parts.length != 4) {
-                    p.sendMessage(this.plugin.getMessage("oppass_change_usage"));
-                    return;
-                }
-                String oldPass = parts[2];
-                String newPass = parts[3];
-                if (checkPassword(p, oldPass)) {
-                    setPassword(p, newPass);
-                    p.sendMessage(this.plugin.getMessage("password_changed"));
-                    this.plugin.getLogger().info(p.getName() + " đã đổi mật khẩu thành công.");
-                } else {
-                    p.sendMessage(this.plugin.getMessage("password_wrong"));
-                }
-                return;
-            }
-
-            if (isConfirmed(p)) {
-                p.sendMessage(this.plugin.getMessage("already_confirmed"));
-                return;
-            }
-
-            String cleanInput = input.replace("`", "").replace("*", "").trim();
-
-            if (isTwoFAReady(p)) {
-                if (verify2FACodeInput(p, cleanInput)) {
-                    p.sendMessage(ChatColor.GREEN + "Xác thực 2FA thành công! Đã mở khóa.");
-                    this.plugin.getLogger().info(p.getName() + " đã xác thực 2FA thành công.");
-                } else {
-                    p.sendMessage(ChatColor.RED + "Sai mã 2FA!");
-                }
-                return;
-            }
-
-            UUID uuid = p.getUniqueId();
-            String storedCode = this.player2FACodes.get(uuid);
-            if (storedCode != null && storedCode.equals(cleanInput)) {
-                unlockPlayer(p);
-                this.player2FACodes.remove(uuid);
-                this.codeExpiry.remove(uuid);
-                this.setTwoFAReady(p, false);
-                this.plugin.msg(p, "oppass_2fa_correct");
-                this.plugin.getLogger().info(p.getName() + " đã xác thực 2FA (via fallback check).");
-                return;
-            }
-
-            handlePasswordLogin(p, input);
-
-            if (awaitingConsoleConfirm.containsKey(p.getUniqueId())) {
-                this.plugin.getLogger().info(p.getName() + " \n" + "Password has been entered. Awaiting confirmation (Console).");
-            } else if (isTwoFAReady(p)) {
-                this.plugin.getLogger().info(p.getName() + " \n" + "Password entered. 2FA code sent.");
-            }
-
             return;
         }
 
@@ -298,7 +274,7 @@ public class OpManager implements Listener {
 
             if (!isAllowed) {
                 event.setCancelled(true);
-                p.sendMessage(ChatColor.RED + "You must verify your OP before using the command! Type /oppass <password>");
+                this.plugin.msg(p, "op_verification_command_blocked");
                 return;
             }
         }
@@ -307,7 +283,7 @@ public class OpManager implements Listener {
             if (this.disabledCommandsRaw.contains(cmdRaw)) {
                 if (p.isOp() && !p.hasPermission("opprotection.bypass.blacklist")) {
                     event.setCancelled(true);
-                    p.sendMessage(ChatColor.RED + "This command is prohibited for the OP for security reasons.");
+                    this.plugin.msg(p, "disabled_command_for_op");
                     return;
                 }
             }
@@ -320,6 +296,9 @@ public class OpManager implements Listener {
                 this.runOnMain(() -> {
                     if (!target.isOnline()) return; 
                     if (target.isOp() && !this.isConfirmed(target)) {
+                        if (tryPremiumAutoBypass(target)) {
+                            return;
+                        }
                         if (isIpRecognized(target)) {  
                             setConfirmed(target, true); 
                             this.plugin.getLogger().info("Auto-login OP for " + target.getName() + " (IP Match)");
@@ -333,7 +312,7 @@ public class OpManager implements Listener {
                                 this.setTwoFAReady(target, true);  
                             }
                             this.lockPlayer(target);
-                            target.sendMessage(ChatColor.RED + "You have just regained OP privileges. Please verify to continue!");  // FIX: Use 'target' not 'p'
+                            this.plugin.msg(target, "op_regrant_verify_required");
                         }
                     }
                 });
@@ -358,7 +337,7 @@ public class OpManager implements Listener {
         Runnable checkTask = () -> {
             for (Player p : Bukkit.getOnlinePlayers()) {
                 Runnable playerCheck = () -> {
-                    if (!p.isOnline()) return;  // Safety check
+                    if (!p.isOnline()) return;  
                     
                     UUID uuid = p.getUniqueId();
                     boolean currentOpStatus = p.isOp() || this.hasLuckPermsStar(p);
@@ -376,6 +355,9 @@ public class OpManager implements Listener {
                             // Schedule state changes on main thread
                             this.runOnMain(() -> {
                                 if (!p.isOnline()) return;
+                                if (tryPremiumAutoBypass(p)) {
+                                    return;
+                                }
                                 if (isIpRecognized(p)) {
                                     setConfirmed(p, true);
                                     this.plugin.getLogger().info("Auto-login OP for " + p.getName() + " (IP Match)");
@@ -423,6 +405,16 @@ public class OpManager implements Listener {
         }
     }
 
+    private boolean tryPremiumAutoBypass(Player p) {
+        if (!this.plugin.getConfig().getBoolean("premium-auth.enabled", false)) return false;
+        if (!this.plugin.getConfig().getBoolean("premium-auth.op-whitelist-premium-auto-bypass-2fa", false)) return false;
+        if (!this.plugin.consumePremium2FABypass(p.getUniqueId())) return false;
+        setConfirmed(p, true);
+        this.plugin.msg(p, "premium_auto_verified");
+        this.plugin.getLogger().info("Auto-login OP for " + p.getName() + " (Premium Mojang UUID Match)");
+        return true;
+    }
+
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
         Player p = event.getPlayer();
@@ -430,9 +422,13 @@ public class OpManager implements Listener {
 
         if (this.opWhitelist.contains(p.getName()) && (p.isOp() || this.hasLuckPermsStar(p))) {
             if (!this.isConfirmed(p)) {
+                if (tryPremiumAutoBypass(p)) {
+                    return;
+                }
+
                 if (isIpRecognized(p)) {
                     setConfirmed(p, true);
-                    p.sendMessage(ChatColor.GREEN + "Đã tự động xác minh OP qua IP cũ.");
+                    this.plugin.msg(p, "op_verification_ip_auto_login");
                     return;
                 }
 
@@ -472,7 +468,7 @@ public class OpManager implements Listener {
         UUID uuid = p.getUniqueId();
 
         if (!checkPassword(p, input)) {
-            p.sendMessage(ChatColor.RED + "Sai mật khẩu!");
+            this.plugin.msg(p, "oppass_password_incorrect");
             awaitingConsoleConfirm.remove(uuid);
             return;
         }
@@ -486,7 +482,6 @@ public class OpManager implements Listener {
             generate2FACode(p, null);
             setTwoFAReady(p, true);
             awaitingConsoleConfirm.remove(uuid);
-            this.plugin.msg(p, "oppass_2fa_discord_sent");
 
         } else {
             awaitingConsoleConfirm.put(uuid, true);
@@ -499,13 +494,11 @@ public class OpManager implements Listener {
         String storedCode = this.player2FACodes.get(uuid);
         Long codeExpireTime = this.codeExpiry.get(uuid);
         
-        // Check if code exists
         if (storedCode == null) {
             this.plugin.msg(p, "oppass_2fa_code_already_sent");
             return false;
         }
         
-        // Check if code expired
         if (codeExpireTime != null && System.currentTimeMillis() > codeExpireTime) {
             this.plugin.msg(p, "oppass_2fa_code_expired");
             this.player2FACodes.remove(uuid);
@@ -514,7 +507,6 @@ public class OpManager implements Listener {
             return false;
         }
         
-        // Check if code matches
         if (!storedCode.equals(code)) {
             this.plugin.msg(p, "oppass_2fa_incorrect");
             return false;
@@ -567,7 +559,7 @@ public class OpManager implements Listener {
             p.setWalkSpeed(0.0f);
             if (p.getGameMode() != GameMode.SPECTATOR) p.setGameMode(GameMode.ADVENTURE);
             this.applyBlind(p);
-            this.sendTitle(p, ChatColor.RED + this.plugin.getMessage("op_verification_title"), this.plugin.getMessage("op_verification_subtitle").replace("%time%", String.valueOf(this.passTimeout)));
+            this.sendTitle(p, this.plugin.getMessage("op_verification_title"), this.plugin.getMessage("op_verification_subtitle").replace("%time%", String.valueOf(this.passTimeout)));
             p.sendMessage(this.plugin.getMessage("op_verification_instruction").replace("%time%", String.valueOf(this.passTimeout)));
         };
 
@@ -584,7 +576,7 @@ public class OpManager implements Listener {
             int remaining = Math.max(0, passTimeout - elapsed[0]);
 
             Runnable updateUI = () -> {
-                sendTitle(p, ChatColor.RED + plugin.getMessage("op_verification_title"), plugin.getMessage("op_verification_subtitle").replace("%time%", String.valueOf(remaining)));
+                sendTitle(p, plugin.getMessage("op_verification_title"), plugin.getMessage("op_verification_subtitle").replace("%time%", String.valueOf(remaining)));
                 sendActionBar(p, plugin.getMessage("op_verification_instruction").replace("%time%", String.valueOf(remaining)));
             };
             if (isFolia) p.getScheduler().run(plugin, t -> updateUI.run(), null);
@@ -785,11 +777,6 @@ public class OpManager implements Listener {
     public String getOpPassword() { return this.opPassword; }
     public Set<String> getDisabledCommandsRaw() { return this.disabledCommandsRaw; }
 
-    /**
-     * Get list of allowed commands for unverified OP players
-     * These commands can be used by sivilians (players without OP)
-     * Once player verifies OP (isConfirmed = true), they can use any command + chat
-     */
     public Set<String> getAuthCommands() {
         return new HashSet<>(this.plugin.getConfig().getStringList("allowed-commands"));
     }
@@ -994,7 +981,7 @@ public class OpManager implements Listener {
                 if (playerTwoFAReady) {
                     this.plugin.msg(p, "oppass_2fa_waiting");
                 } else {
-                    p.sendMessage(ChatColor.RED + "Bạn đang bị khóa vui lòng xác minh OP trước!");
+                    this.plugin.msg(p, "op_locked_chat_blocked");
                 }
             };
             

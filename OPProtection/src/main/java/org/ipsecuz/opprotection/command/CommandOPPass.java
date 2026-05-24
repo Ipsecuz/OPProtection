@@ -1,10 +1,9 @@
 package org.ipsecuz.opprotection.command;
 
-import java.util.HashMap;
-import java.util.Map;
+import java.util.Arrays;
+import java.util.Locale;
 import java.util.UUID;
 import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -19,8 +18,8 @@ import org.ipsecuz.opprotection.managers.OpManager;
 public class CommandOPPass implements CommandExecutor {
     private final OPProtection plugin;
     private final OpManager opManager;
+    @SuppressWarnings("unused")
     private final IPManager ipManager;
-    private final Map<UUID, String> pendingConfirmations = new HashMap<>();
     private final boolean isFolia;
 
     public CommandOPPass(OPProtection plugin, OpManager opManager, IPManager ipManager) {
@@ -31,138 +30,258 @@ public class CommandOPPass implements CommandExecutor {
     }
 
     public void removePendingConfirmation(UUID playerUUID) {
-        this.pendingConfirmations.remove(playerUUID);
+        this.opManager.clearAwaitingConsole(playerUUID);
     }
 
     @Override
     public boolean onCommand(CommandSender sender, Command cmd, String label, String[] args) {
-        if (sender instanceof Player) {
-            Player p = (Player) sender;
-            if (!p.isOp()) {
-                p.sendMessage(this.plugin.getMessage("no_permission"));
-                return true;
-            }
-
-            if (args.length == 0) {
-                p.sendMessage(this.plugin.getMessage("oppass_usage"));
-                return true;
-            }
-
-            if (args[0].equalsIgnoreCase("change")) {
-                if (args.length != 3) {
-                    p.sendMessage(this.plugin.getMessage("oppass_change_usage"));
-                    return true;
-                }
-                String oldPass = args[1];
-                String newPass = args[2];
-                if (this.opManager.checkPassword(p, oldPass)) {
-                    this.opManager.setPassword(p, newPass);
-                    p.sendMessage(this.plugin.getMessage("password_changed"));
-                } else {
-                    p.sendMessage(this.plugin.getMessage("password_wrong"));
-                }
-                return true;
-            }
-
-            if (this.opManager.isConfirmed(p)) {
-                p.sendMessage(this.plugin.getMessage("already_confirmed"));
-                return true;
-            }
-
-            if (this.opManager.isTwoFAReady(p)) {
-                if (this.opManager.verify2FACodeInput(p, args[0])) {
-                    p.sendMessage(ChatColor.GREEN + "Xác thực 2FA thành công! Đã mở khóa.");
-                } else {
-                    p.sendMessage(ChatColor.RED + "Sai mã 2FA hoặc mã hết hạn!");
-                }
-                return true;
-            }
-
-            this.opManager.handlePasswordLogin(p, args[0]);
-            return true;
+        if (sender instanceof Player player) {
+            return handlePlayerCommandLine(player, buildCommandLine(label, args));
         }
 
         if (sender instanceof ConsoleCommandSender) {
-            if (args.length == 0) {
-                this.sendConsoleHelp(sender);
-                return true;
-            }
+            return handleConsoleCommand(sender, args);
+        }
 
-            if (args[0].equalsIgnoreCase("confirm")) {
-                if (args.length != 2) {
-                    sender.sendMessage(this.plugin.getMessage("oppass_console_confirm_usage"));
-                    return true;
-                }
-                String playerName = args[1];
-                Player target = Bukkit.getPlayerExact(playerName);
+        sender.sendMessage(this.plugin.getMessage("oppass_console_only"));
+        return true;
+    }
 
-                if (target == null) {
-                    sender.sendMessage("§cNgười chơi không online!");
-                    return true;
-                }
+    public boolean handlePlayerCommandLine(Player player, String commandLine) {
+        String rawArguments = extractRawArguments(commandLine);
+        String[] args = rawArguments.isEmpty() ? new String[0] : rawArguments.split("\\s+");
+        return handlePlayerCommand(player, args, rawArguments);
+    }
 
-                if (this.opManager.isAwaitingConsole(target)) {
-                    this.opManager.finalizeConsoleVerification(target);
-                    sender.sendMessage("§aĐã xác minh và mở khóa cho " + playerName);
-                    target.sendMessage(this.plugin.getMessage("oppass_confirm_success_player"));
-                } else if (this.opManager.isConfirmed(target)) {
-                    sender.sendMessage("§eNgười chơi đã xác minh rồi.");
-                } else {
-                    sender.sendMessage("§cLỗi: Người chơi chưa nhập đúng mật khẩu! Không thể xác nhận.");
-                }
-                return true;
-            }
+    public boolean handlePlayerCommand(Player player, String[] args, String rawArguments) {
+        if (!canUsePlayerOPPass(player)) {
+            player.sendMessage(this.plugin.getMessage("no_permission"));
+            return true;
+        }
 
-            if (args[0].equalsIgnoreCase("resetip")) {
-                if (args.length != 2) {
-                    sender.sendMessage(this.plugin.getMessage("oppass_console_resetip_usage"));
-                    return true;
-                }
-                String playerName = args[1];
+        if (args.length == 0) {
+            player.sendMessage(this.plugin.getMessage("oppass_usage"));
+            return true;
+        }
 
-                OfflinePlayer offlinePlayer = Bukkit.getOfflinePlayer(playerName);
-                UUID targetUUID = offlinePlayer.getUniqueId();
+        String subCommand = args[0].toLowerCase(Locale.ROOT);
+        if (subCommand.equals("createpass") || subCommand.equals("resetpass") || subCommand.equals("confirm") || subCommand.equals("resetip")) {
+            player.sendMessage(this.plugin.getMessage("oppass_console_only"));
+            return true;
+        }
 
-                if (this.opManager.resetPlayerIP(targetUUID)) {
-                    sender.sendMessage(this.plugin.getMessage("oppass_resetip_success"));
-                    this.plugin.getLogger().info("IP của " + playerName + " đã được reset về 'unknown'.");
+        if (subCommand.equals("change")) {
+            handlePlayerPasswordChange(player, args);
+            return true;
+        }
 
-                    Player onlineTarget = Bukkit.getPlayer(targetUUID);
-                    if (onlineTarget != null && onlineTarget.isOnline()) {
-                        String kickReason = "§cIP của bạn đã bị reset bởi Admin.\n§eVui lòng đăng nhập lại để xác minh danh tính!";
+        if (this.opManager.isConfirmed(player)) {
+            player.sendMessage(this.plugin.getMessage("already_confirmed"));
+            return true;
+        }
 
-                        if (this.isFolia) {
-                            onlineTarget.getScheduler().run(plugin, task -> onlineTarget.kickPlayer(kickReason), null);
-                        } else {
-                            onlineTarget.kickPlayer(kickReason);
-                        }
-                        sender.sendMessage("§aĐã kick người chơi " + playerName + " để áp dụng bảo mật.");
-                    }
-                } else {
-                    sender.sendMessage(this.plugin.getMessage("oppass_resetip_not_found"));
-                }
-                return true;
-            }
+        String input = sanitizeSensitiveInput(rawArguments == null || rawArguments.isBlank() ? args[0] : rawArguments);
+        if (input.isBlank()) {
+            player.sendMessage(this.plugin.getMessage("oppass_usage"));
+            return true;
+        }
 
-            this.sendConsoleHelp(sender);
+        if (this.opManager.isTwoFAReady(player) || this.opManager.matchesPending2FACode(player, input)) {
+            this.opManager.verify2FACodeInput(player, input);
+            return true;
+        }
+
+        this.opManager.handlePasswordLogin(player, input);
+        if (this.opManager.isAwaitingConsole(player)) {
+            this.plugin.getLogger().info("[OPPass] " + player.getName() + " entered the OP password successfully. Awaiting console confirmation.");
+        } else if (this.opManager.isTwoFAReady(player)) {
+            this.plugin.getLogger().info("[OPPass] " + player.getName() + " entered the OP password successfully. 2FA code was sent.");
         }
         return true;
     }
 
-    private void sendConsoleHelp(CommandSender sender) {
-        sender.sendMessage(this.plugin.getMessage("oppass_console_usage"));
-        sender.sendMessage("§c/oppass confirm <player> - Xác nhận mở khóa (khi tắt 2FA)");
-        sender.sendMessage("§c/oppass resetip <player> - Reset IP");
-    }
+    private boolean handleConsoleCommand(CommandSender sender, String[] args) {
+        if (args.length == 0) {
+            this.sendConsoleHelp(sender);
+            return true;
+        }
 
-    private void sendMessage(CommandSender sender, String message) {
-        if (sender instanceof Player) {
-            Player p = (Player) sender;
-            if (this.isFolia) {
-                p.getScheduler().run((Plugin) this.plugin, task -> p.sendMessage(message), null);
-                return;
+        String subCommand = args[0].toLowerCase(Locale.ROOT);
+        switch (subCommand) {
+            case "createpass" -> {
+                handleConsoleCreatePass(sender, args);
+                return true;
+            }
+            case "resetpass" -> {
+                handleConsoleResetPass(sender, args);
+                return true;
+            }
+            case "confirm" -> {
+                handleConsoleConfirm(sender, args);
+                return true;
+            }
+            case "resetip" -> {
+                handleConsoleResetIP(sender, args);
+                return true;
+            }
+            default -> {
+                this.sendConsoleHelp(sender);
+                return true;
             }
         }
-        sender.sendMessage(message);
+    }
+
+    private void handlePlayerPasswordChange(Player player, String[] args) {
+        if (args.length < 3) {
+            player.sendMessage(this.plugin.getMessage("oppass_change_usage"));
+            return;
+        }
+
+        String oldPass = args[1];
+        String newPass = joinArgs(args, 2);
+        if (!this.opManager.checkPassword(player, oldPass)) {
+            player.sendMessage(this.plugin.getMessage("password_wrong"));
+            return;
+        }
+
+        try {
+            this.opManager.setPassword(player, newPass);
+            player.sendMessage(this.plugin.getMessage("password_changed"));
+            this.plugin.getLogger().info("[OPPass] " + player.getName() + " changed their personal OP password hash.");
+        } catch (IllegalArgumentException ex) {
+            player.sendMessage(this.plugin.getMessage("oppass_password_policy").replace("%min%", String.valueOf(this.opManager.getPasswordMinLength())));
+        }
+    }
+
+    private void handleConsoleCreatePass(CommandSender sender, String[] args) {
+        if (args.length < 2) {
+            sender.sendMessage(this.plugin.getMessage("oppass_createpass_usage"));
+            return;
+        }
+
+        try {
+            this.opManager.setGlobalPassword(joinArgs(args, 1));
+            sender.sendMessage(this.plugin.getMessage("oppass_createpass_success"));
+            this.plugin.getLogger().info("[OPPass] Global OP password hash was created by console.");
+        } catch (IllegalArgumentException ex) {
+            sender.sendMessage(this.plugin.getMessage("oppass_password_policy").replace("%min%", String.valueOf(this.opManager.getPasswordMinLength())));
+        }
+    }
+
+    private void handleConsoleResetPass(CommandSender sender, String[] args) {
+        try {
+            if (args.length >= 2) {
+                this.opManager.setGlobalPassword(joinArgs(args, 1));
+                sender.sendMessage(this.plugin.getMessage("oppass_resetpass_success"));
+                this.plugin.getLogger().info("[OPPass] Global OP password hash was reset by console with a provided value.");
+                return;
+            }
+
+            String generated = this.opManager.resetGlobalPassword();
+            sender.sendMessage(this.plugin.getMessage("oppass_resetpass_success"));
+            sender.sendMessage(this.plugin.getMessage("oppass_resetpass_generated").replace("%password%", generated));
+            this.plugin.getLogger().info("[OPPass] Global OP password hash was reset by console. The one-time password was printed above.");
+        } catch (IllegalArgumentException ex) {
+            sender.sendMessage(this.plugin.getMessage("oppass_password_policy").replace("%min%", String.valueOf(this.opManager.getPasswordMinLength())));
+        }
+    }
+
+    private void handleConsoleConfirm(CommandSender sender, String[] args) {
+        if (args.length != 2) {
+            sender.sendMessage(this.plugin.getMessage("oppass_console_confirm_usage"));
+            return;
+        }
+        String playerName = args[1];
+        Player target = Bukkit.getPlayerExact(playerName);
+
+        if (target == null) {
+            sender.sendMessage(this.plugin.getMessage("oppass_confirm_player_offline"));
+            return;
+        }
+
+        if (this.opManager.isAwaitingConsole(target)) {
+            this.opManager.finalizeConsoleVerification(target);
+            sender.sendMessage(this.plugin.getMessage("oppass_confirm_success").replace("%player%", playerName));
+            target.sendMessage(this.plugin.getMessage("oppass_confirm_success_player"));
+        } else if (this.opManager.isConfirmed(target)) {
+            sender.sendMessage(this.plugin.getMessage("oppass_confirm_not_needed"));
+        } else {
+            sender.sendMessage(this.plugin.getMessage("oppass_confirm_no_password"));
+        }
+    }
+
+    private void handleConsoleResetIP(CommandSender sender, String[] args) {
+        if (args.length != 2) {
+            sender.sendMessage(this.plugin.getMessage("oppass_console_resetip_usage"));
+            return;
+        }
+        String playerName = args[1];
+
+        OfflinePlayer offlinePlayer = Bukkit.getOfflinePlayer(playerName);
+        UUID targetUUID = offlinePlayer.getUniqueId();
+
+        if (this.opManager.resetPlayerIP(targetUUID)) {
+            sender.sendMessage(this.plugin.getMessage("oppass_resetip_success").replace("%player%", playerName));
+            this.plugin.getLogger().info("[OPPass] Saved IP fingerprint for " + playerName + " was reset.");
+
+            Player onlineTarget = Bukkit.getPlayer(targetUUID);
+            if (onlineTarget != null && onlineTarget.isOnline()) {
+                String kickReason = this.plugin.getMessage("oppass_resetip_kick");
+                if (this.isFolia) {
+                    onlineTarget.getScheduler().run((Plugin) this.plugin, task -> onlineTarget.kickPlayer(kickReason), null);
+                } else {
+                    onlineTarget.kickPlayer(kickReason);
+                }
+                sender.sendMessage(this.plugin.getMessage("oppass_resetip_kicked").replace("%player%", playerName));
+            }
+        } else {
+            sender.sendMessage(this.plugin.getMessage("oppass_resetip_not_found").replace("%player%", playerName));
+        }
+    }
+
+    private boolean canUsePlayerOPPass(Player player) {
+        return this.opManager.getOpWhitelist().contains(player.getName())
+                || player.hasPermission("opprotection.oppass")
+                || this.opManager.isLocked(player)
+                || this.opManager.isTwoFAReady(player);
+    }
+
+    private String sanitizeSensitiveInput(String input) {
+        return input == null ? "" : input.replace("`", "").replace("*", "").trim();
+    }
+
+    private String buildCommandLine(String label, String[] args) {
+        String safeLabel = (label == null || label.isBlank()) ? "oppass" : label;
+        if (args == null || args.length == 0) {
+            return safeLabel;
+        }
+        return safeLabel + " " + String.join(" ", args);
+    }
+
+    private String extractRawArguments(String commandLine) {
+        String trimmed = commandLine == null ? "" : commandLine.trim();
+        if (trimmed.startsWith("/")) {
+            trimmed = trimmed.substring(1);
+        }
+        int firstSpace = trimmed.indexOf(' ');
+        if (firstSpace < 0 || firstSpace + 1 >= trimmed.length()) {
+            return "";
+        }
+        return trimmed.substring(firstSpace + 1).trim();
+    }
+
+    private String joinArgs(String[] args, int startIndex) {
+        if (args == null || args.length <= startIndex) {
+            return "";
+        }
+        return String.join(" ", Arrays.copyOfRange(args, startIndex, args.length)).trim();
+    }
+
+    private void sendConsoleHelp(CommandSender sender) {
+        sender.sendMessage(this.plugin.getMessage("oppass_console_usage"));
+        sender.sendMessage(this.plugin.getMessage("oppass_createpass_usage"));
+        sender.sendMessage(this.plugin.getMessage("oppass_resetpass_usage"));
+        sender.sendMessage(this.plugin.getMessage("oppass_console_confirm_usage"));
+        sender.sendMessage(this.plugin.getMessage("oppass_console_resetip_usage"));
     }
 }

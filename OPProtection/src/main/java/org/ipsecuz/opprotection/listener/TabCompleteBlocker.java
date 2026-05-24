@@ -74,7 +74,7 @@ public class TabCompleteBlocker implements Listener, PacketListener {
                         }
                     }
                 } catch (Exception ignored) {
-                    // Ignore if wrapper methods don't exist in this PacketEvents version
+                    
                 }
             }
         } catch (Exception e) {
@@ -91,7 +91,6 @@ public class TabCompleteBlocker implements Listener, PacketListener {
         List<String> filteredCommands = new ArrayList<>();
 
         for (String command : originalCommands) {
-            // Check if this specific command is blocked
             if (isBlockedCommand(command)) {
                 if (isDebugMode()) {
                     logDebug("Blocked command in tab complete: " + command);
@@ -133,7 +132,6 @@ public class TabCompleteBlocker implements Listener, PacketListener {
     private boolean shouldRemoveCommand(String command) {
         String lowerCommand = command.toLowerCase();
 
-        // If command contains namespace separator and is not in target list, remove it
         if (lowerCommand.contains(":") && !targetCommands.contains(lowerCommand)) {
             return true;
         }

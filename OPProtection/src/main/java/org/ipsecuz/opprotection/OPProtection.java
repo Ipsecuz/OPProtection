@@ -11,6 +11,8 @@ import org.ipsecuz.opprotection.listener.CommandBlocker;
 import org.ipsecuz.opprotection.listener.PacketIpCheck;
 import org.ipsecuz.opprotection.listener.TabCompleteBlocker;
 import org.ipsecuz.opprotection.listener.F3BrandBlocker;
+import org.ipsecuz.opprotection.listener.SecureOPPassCommandHider;
+import org.ipsecuz.opprotection.listener.SecureOPPassPacketListener;
 import org.ipsecuz.opprotection.command.CommandOPPass;
 import org.ipsecuz.opprotection.command.CommandOPReload;
 import org.ipsecuz.opprotection.command.CommandVerify;
@@ -21,6 +23,8 @@ import org.ipsecuz.opprotection.managers.IPManager;
 import org.ipsecuz.opprotection.managers.OpManager;
 import org.ipsecuz.opprotection.managers.DiscordSyncModule;
 import org.ipsecuz.opprotection.utils.ConfigCache;
+import org.ipsecuz.opprotection.security.PremiumAccountChecker;
+import org.ipsecuz.opprotection.security.PasswordHasher;
 
 import java.io.File;
 import java.util.*;
@@ -39,8 +43,11 @@ public class OPProtection extends JavaPlugin {
     private FileConfiguration messagesConfig;
     private FileConfiguration embedConfig;
     private F3BrandBlocker f3BrandBlocker;
+    private PremiumAccountChecker premiumAccountChecker;
+    private CommandOPPass commandOPPass;
     private final ScheduledExecutorService asyncExecutor = Executors.newScheduledThreadPool(2);
     private volatile boolean needsConfigSave = false;
+    private final Set<UUID> premium2FABypass = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private static final String RESET = "\u001B[0m";
 
 
@@ -50,21 +57,23 @@ public class OPProtection extends JavaPlugin {
         long startTime = System.currentTimeMillis();
 
         saveDefaultConfig();
+        migrateLegacyGlobalPassword();
         loadMessagesConfig();
         loadEmbedsConfig();
 
         this.configCache = new ConfigCache(this);
+        this.premiumAccountChecker = new PremiumAccountChecker(this);
         
         initializePacketEvents();
         
         loadManagers();
-        registerListeners();
         registerCommands();
+        registerListeners();
         startAsyncConfigSaver();
 
         long loadTime = System.currentTimeMillis() - startTime;
-        getLogger().info("§a✓ OPProtection enabled successfully in " + loadTime + "ms");
-        getLogger().info("§aVersion: " + getDescription().getVersion());
+        getLogger().info("[OPProtection] Enabled successfully in " + loadTime + "ms");
+        getLogger().info("[OPProtection] Version: " + getDescription().getVersion());
     }
 
     @Override
@@ -85,7 +94,7 @@ public class OPProtection extends JavaPlugin {
         } catch (InterruptedException e) {
             asyncExecutor.shutdownNow();
         }
-        getLogger().info("§cOPProtection disabled");
+        getLogger().info("[OPProtection] Disabled safely.");
     }
 
     private void loadManagers() {
@@ -105,40 +114,69 @@ public class OPProtection extends JavaPlugin {
             if (token != null && !token.isEmpty() && channelId != null && !channelId.isEmpty()) {
                 try {
                     this.discordBot = new DiscordBot(this, token, channelId);
-                    getLogger().info("§aDiscord bot enabled");
+                    getLogger().info("[OPProtection] Discord bot enabled.");
                     
                     if (discordBot.isConnected()) {
                         this.discordEventListener = new DiscordEventListener(this, discordBot.getClient());
-                        getLogger().info("§aDiscord event listener registered");
+                        getLogger().info("[OPProtection] Discord event listener registered.");
                     }
                 } catch (Exception e) {
-                    getLogger().severe("§cFailed to start Discord Bot: " + e.getMessage());
+                    getLogger().severe("[OPProtection] Failed to start Discord bot: " + e.getMessage());
                     e.printStackTrace();
                 }
             }
         }
     }
 
+    private void migrateLegacyGlobalPassword() {
+        String stored = getConfig().getString("op-password", "");
+        if (stored == null || stored.isBlank()) {
+            getLogger().warning("[OPProtection] Global OP password is not configured. Use /oppass createpass <password> or /oppass resetpass in console.");
+            return;
+        }
+        if (PasswordHasher.isStrongHash(stored)) {
+            return;
+        }
+        try {
+            getConfig().set("op-password", PasswordHasher.hash(stored));
+            saveConfig();
+            getLogger().warning("[OPProtection] Legacy plaintext op-password was migrated to a secure PBKDF2 hash. If you forgot it, use /oppass resetpass in console.");
+        } catch (Exception e) {
+            getLogger().severe("[OPProtection] Could not migrate legacy op-password: " + e.getMessage());
+        }
+    }
+
     private void initializePacketEvents() {
         try {
             if (com.github.retrooper.packetevents.PacketEvents.getAPI() != null) {
-                getLogger().info("§aPacketEvents initialized successfully");
+                getLogger().info("[OPProtection] PacketEvents detected.");
             }
-        } catch (Exception e) {
-            getLogger().warning("§cFailed to initialize PacketEvents: " + e.getMessage());
-            getLogger().warning("§cTab completion filtering may not work correctly");
+        } catch (Throwable e) {
+            getLogger().warning("[OPProtection] Failed to initialize PacketEvents: " + e.getMessage());
+            getLogger().warning("[OPProtection] Packet-level features will fall back where possible.");
         }
     }
 
     private void registerListeners() {
         boolean ipForwarding = getConfig().getBoolean("ip-forwarding", false);
+        if (this.commandOPPass != null) {
+            Bukkit.getPluginManager().registerEvents(new SecureOPPassCommandHider(this, this.commandOPPass), this);
+            if (getConfig().getBoolean("secure-command-input.hide-oppass-from-console-log", true)) {
+                try {
+                    com.github.retrooper.packetevents.PacketEvents.getAPI().getEventManager().registerListener(new SecureOPPassPacketListener(this));
+                    getLogger().info("[OPProtection] Secure /oppass packet guard enabled.");
+                } catch (Throwable e) {
+                    getLogger().warning("[OPProtection] Could not enable packet-level /oppass guard. Bukkit fallback remains active: " + e.getMessage());
+                }
+            }
+        }
         Bukkit.getPluginManager().registerEvents(new PacketIpCheck(this, ipForwarding), this);
         Bukkit.getPluginManager().registerEvents(new CommandBlocker(this), this);
 
         if (getConfig().getBoolean("tab-complete-block.enabled", true)) {
             try {
                 Bukkit.getPluginManager().registerEvents(new TabCompleteBlocker(this), this);
-                getLogger().info("§aTabCompleteBlocker enabled (PacketEvents)");
+                getLogger().info("[OPProtection] TabCompleteBlocker enabled.");
             } catch (Exception e) {
                 getLogger().warning("Could not enable TabCompleteBlocker (PacketEvents missing?): " + e.getMessage());
             }
@@ -148,7 +186,7 @@ public class OPProtection extends JavaPlugin {
             try {
                 this.f3BrandBlocker = new F3BrandBlocker(this);
                 com.github.retrooper.packetevents.PacketEvents.getAPI().getEventManager().registerListener(this.f3BrandBlocker);
-                getLogger().info("§aF3 Brand Spoofer enabled (PacketEvents)");
+                getLogger().info("[OPProtection] F3 brand spoofer enabled.");
             } catch (Exception e) {
                 getLogger().warning("Could not enable F3 Brand Spoofer: " + e.getMessage());
                 e.printStackTrace();
@@ -158,7 +196,8 @@ public class OPProtection extends JavaPlugin {
 
     private void registerCommands() {
         if (getCommand("oppass") != null) {
-            getCommand("oppass").setExecutor(new CommandOPPass(this, opManager, ipManager));
+            this.commandOPPass = new CommandOPPass(this, opManager, ipManager);
+            getCommand("oppass").setExecutor(this.commandOPPass);
         } else {
             getLogger().warning("Command 'oppass' not found in plugin.yml!");
         }
@@ -240,7 +279,7 @@ public class OPProtection extends JavaPlugin {
             if (f3BrandBlocker != null) {
             f3BrandBlocker.reload();
         }
-        getLogger().info("§aPlugin reloaded successfully");
+        getLogger().info("[OPProtection] Reload completed successfully.");
     }
 
     private void startAsyncConfigSaver() {
@@ -312,8 +351,13 @@ public class OPProtection extends JavaPlugin {
     public boolean isDiscordEnabled() { return discordBot != null; }
     public FileConfiguration getEmbedConfig() { return embedConfig; }
     public ConfigCache getConfigCache() { return configCache; }
+    public PremiumAccountChecker getPremiumAccountChecker() { return premiumAccountChecker; }
+    public CommandOPPass getCommandOPPass() { return commandOPPass; }
     public DiscordSyncModule getDiscordSyncModule() { return discordSyncModule; }
     public ScheduledExecutorService getAsyncExecutor() { return asyncExecutor; }
+    public void markPremium2FABypass(UUID uuid) { if (uuid != null) premium2FABypass.add(uuid); }
+    public void clearPremium2FABypass(UUID uuid) { if (uuid != null) premium2FABypass.remove(uuid); }
+    public boolean consumePremium2FABypass(UUID uuid) { return uuid != null && premium2FABypass.remove(uuid); }
     
     public boolean isFolia() {
         try {

@@ -38,13 +38,13 @@ public class DiscordSyncModule {
         this.verificationTimeoutMs = plugin.getConfig().getLong("discord-sync.verification-timeout-seconds", 300L) * 1000;
         
         this.messageCommandRequiresSync = plugin.getConfig().getString("discord-sync.messages.command-requires-sync", 
-            "&c✗ Lệnh này yêu cầu xác minh Discord!");
+            "&cLệnh này yêu cầu xác minh Discord!");
         this.messageVerifyRequired = plugin.getConfig().getString("discord-sync.messages.verify-required", 
             "&eVui lòng xác minh qua Discord trước khi sử dụng lệnh này.");
         this.messageDeop = plugin.getConfig().getString("discord-sync.messages.deop-message", 
-            "&c✗ Quyền OP đã bị gỡ do lỗi xác minh bảo mật!");
+            "&cQuyền OP đã bị gỡ do lỗi xác minh bảo mật!");
         this.messageShutdown = plugin.getConfig().getString("discord-sync.messages.shutdown-message", 
-            "&c⚠️ Server đang đóng vì phát hiện nghi vấn bảo mật...");
+            "&cServer đang đóng vì phát hiện nghi vấn bảo mật...");
         this.messageKick = plugin.getConfig().getString("discord-sync.messages.kick-message", 
             "&c[Discord-Sync] Bạn đã bị kick vì cố gắng sử dụng lệnh bảo mật mà chưa xác minh Discord!");
         
@@ -192,7 +192,7 @@ public class DiscordSyncModule {
         long elapsed = System.currentTimeMillis() - verificationTime;
         long remaining = verificationTimeoutMs - elapsed;
         
-        return Math.max(0, remaining / 1000); // Convert to seconds
+        return Math.max(0, remaining / 1000);
     }
 
     public long getVerificationTimeoutSeconds() {
