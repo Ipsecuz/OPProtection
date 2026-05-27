@@ -172,7 +172,8 @@ premium-auth:
   # Khuyến nghị giữ false để OP vẫn cần xác minh 2FA.
   op-whitelist-premium-auto-bypass-2fa: false 
   messages:
-    kick-cracked-spoof: "&cTài khoản OP whitelist phải là tài khoản premium thật.\n&eLý do: &f%reason%"
+    # Không dùng %reason% ở đây để tránh lộ UUID/internal reason ra disconnect log.
+    kick-cracked-spoof: "&cBạn không phải là tài khoản premium, vui lòng đăng nhập bằng premium"
 
 # Discord Sync - Yêu cầu xác minh Discord cho các command trong whitelist
 discord-sync:

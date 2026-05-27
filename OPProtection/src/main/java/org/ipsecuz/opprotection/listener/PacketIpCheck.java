@@ -123,9 +123,8 @@ public class PacketIpCheck implements Listener {
 
         PremiumResult result = plugin.getPremiumAccountChecker().check(event.getName(), event.getUniqueId());
         if (!result.isValid()) {
-            String kickMsg = color(plugin.getConfig().getString("premium-auth.messages.kick-cracked-spoof",
-                    "&cTài khoản OP whitelist phải là tài khoản premium thật.\n&eLý do: &f%reason%"));
-            event.disallow(AsyncPlayerPreLoginEvent.Result.KICK_OTHER, kickMsg.replace("%reason%", result.getReason()));
+            String kickMsg = buildSafePremiumKickMessage();
+            event.disallow(AsyncPlayerPreLoginEvent.Result.KICK_OTHER, kickMsg);
             addLog("PREMIUM_AUTH_BLOCK", event.getName(), event.getUniqueId().toString(), ip, result.getReason());
             return false;
         }
@@ -139,6 +138,32 @@ public class PacketIpCheck implements Listener {
         addLog("PREMIUM_AUTH_OK", event.getName(), event.getUniqueId().toString(), ip,
                 "Official=" + result.getOfficialName() + "/" + result.getOfficialUuid() + ", autoBypass2FA=" + autoBypass2FA);
         return true;
+    }
+
+    private String buildSafePremiumKickMessage() {
+        String configured = plugin.getConfig().getString("premium-auth.messages.kick-cracked-spoof",
+                "&cBạn không phải là tài khoản premium, vui lòng đăng nhập bằng premium");
+        if (configured == null || configured.isBlank()) {
+            configured = "&cBạn không phải là tài khoản premium, vui lòng đăng nhập bằng premium";
+        }
+
+        // Never expose internal verification details such as official/joined UUIDs to the player.
+        StringBuilder safe = new StringBuilder();
+        for (String line : configured.split("\\r?\\n")) {
+            String lower = ChatColor.stripColor(color(line)).toLowerCase(Locale.ROOT);
+            if (line.contains("%reason%") || lower.contains("uuid mismatch") || lower.contains("official=") || lower.contains("joined=")) {
+                continue;
+            }
+            if (!line.isBlank()) {
+                if (safe.length() > 0) safe.append('\n');
+                safe.append(line);
+            }
+        }
+
+        if (safe.length() == 0) {
+            safe.append("&cBạn không phải là tài khoản premium, vui lòng đăng nhập bằng premium");
+        }
+        return color(safe.toString());
     }
 
     private void checkAndRecordUuid(AsyncPlayerPreLoginEvent event, String ip) {
