@@ -3,233 +3,188 @@ package org.ipsecuz.opprotection.listener;
 import com.destroystokyo.paper.event.player.PlayerHandshakeEvent;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.ChatColor;
-import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.AsyncPlayerPreLoginEvent;
-import org.bukkit.event.player.PlayerLoginEvent;
 import org.ipsecuz.opprotection.OPProtection;
-import org.ipsecuz.opprotection.security.PremiumAccountChecker.PremiumResult;
+import org.ipsecuz.opprotection.security.PreAuthService;
+import org.ipsecuz.opprotection.storage.SecurityDataStore;
 import org.ipsecuz.opprotection.utils.GeoIPChecker;
 
-import java.io.File;
-import java.io.IOException;
 import java.net.IDN;
 import java.net.InetAddress;
-import java.text.SimpleDateFormat;
-import java.util.Date;
-import java.util.HashSet;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.HashSet;
 
-public class PacketIpCheck implements Listener {
-    private static final LegacyComponentSerializer LEGACY_AMPERSAND = LegacyComponentSerializer.legacyAmpersand();
-
+/** Pre-login security checks. Never cancels Paper's handshake pipeline by default. */
+public final class PacketIpCheck implements Listener {
+    private static final LegacyComponentSerializer LEGACY = LegacyComponentSerializer.legacyAmpersand();
     private final OPProtection plugin;
-    private final boolean ipForwardingEnabled;
-    private final GeoIPChecker geoIPChecker;
-    private final File uuidPlayersFile;
-    private final File uuidLogFile;
-    private final Object uuidFileLock = new Object();
+    private final GeoIPChecker geoIP;
+    private volatile boolean domainWhitelistEnabled;
+    private volatile boolean allowSubdomains;
+    private volatile boolean strictProxyEnabled;
+    private volatile boolean blockWhenProxyRulesEmpty;
+    private volatile Set<String> allowedDomains = Set.of();
+    private volatile List<String> allowedProxyRules = List.of();
+    private volatile String primaryDomain = "server chính thức";
+    private volatile String proxyBlockedMessage = "&cProxy/IP kết nối không hợp lệ.";
+    private volatile String geoIpBlockMessage = "&cKhu vực của bạn không được phép truy cập server.";
+    private volatile String domainKickMessage = "&cBạn phải kết nối qua domain chính thức: &f%domain%";
+    private volatile String noDomainMessage = "&cKhông xác định được domain kết nối.";
+    private volatile String premiumKickMessage = "&cTài khoản quản trị phải đăng nhập bằng premium đã xác thực.";
 
-    public PacketIpCheck(OPProtection plugin, boolean ipForwardingEnabled) {
+    public PacketIpCheck(OPProtection plugin) {
         this.plugin = plugin;
-        this.ipForwardingEnabled = ipForwardingEnabled;
-        this.geoIPChecker = new GeoIPChecker(plugin);
-
-        File uuidFolder = new File(plugin.getDataFolder(), "uuid");
-        if (!uuidFolder.exists()) uuidFolder.mkdirs();
-        this.uuidPlayersFile = new File(uuidFolder, "players.yml");
-        this.uuidLogFile = new File(uuidFolder, "log.yml");
-
-        try {
-            if (!this.uuidPlayersFile.exists()) this.uuidPlayersFile.createNewFile();
-            if (!this.uuidLogFile.exists()) this.uuidLogFile.createNewFile();
-        } catch (IOException e) {
-            plugin.getLogger().warning("Could not create UUID files: " + e.getMessage());
-        }
+        this.geoIP = new GeoIPChecker(plugin);
+        reload();
     }
 
-    @EventHandler(priority = EventPriority.LOWEST)
-    public void preserveDefaultPlayerHandshake(PlayerHandshakeEvent event) {
-        event.setCancelled(true);
+    public void reload() {
+        geoIP.reload();
+        this.domainWhitelistEnabled = plugin.getConfig().getBoolean("domain-whitelist.enabled", false);
+        this.allowSubdomains = plugin.getConfig().getBoolean("domain-whitelist.allow-subdomains", false);
+        this.strictProxyEnabled = plugin.getConfig().getBoolean("domain-whitelist.strict-proxy-ip.enabled", true);
+        this.blockWhenProxyRulesEmpty = plugin.getConfig().getBoolean(
+                "domain-whitelist.strict-proxy-ip.block-when-empty", true);
+
+        Set<String> domains = new HashSet<>();
+        List<String> configuredDomains = plugin.getConfig().getStringList("domain-whitelist.allowed-domains");
+        for (String configured : configuredDomains) {
+            String normalized = normalizeHost(configured);
+            if (!normalized.isEmpty()) domains.add(normalized);
+        }
+        this.allowedDomains = Set.copyOf(domains);
+        this.primaryDomain = configuredDomains.isEmpty() ? "server chính thức" : configuredDomains.get(0);
+
+        List<String> proxyRules = new ArrayList<>();
+        for (String configured : plugin.getConfig().getStringList(
+                "domain-whitelist.strict-proxy-ip.allowed-proxy-ips")) {
+            if (configured != null && !configured.isBlank()) proxyRules.add(configured.trim());
+        }
+        this.allowedProxyRules = List.copyOf(proxyRules);
+        this.proxyBlockedMessage = plugin.getConfig().getString("domain-whitelist.messages.proxy-blocked",
+                "&cProxy/IP kết nối không hợp lệ. Vui lòng vào qua proxy chính thức.");
+        this.geoIpBlockMessage = plugin.getConfig().getString("geoip.block-message",
+                "&cKhu vực của bạn không được phép truy cập server.");
+        this.domainKickMessage = plugin.getConfig().getString("domain-whitelist.messages.kick-message",
+                "&cBạn phải kết nối qua domain chính thức: &f%domain%");
+        this.noDomainMessage = plugin.getConfig().getString("domain-whitelist.messages.no-domain-detected",
+                "&cKhông xác định được domain kết nối. Hãy dùng domain chính thức.");
+        this.premiumKickMessage = plugin.getConfig().getString("premium-auth.messages.kick-cracked-spoof",
+                "&cTài khoản quản trị phải đăng nhập bằng premium đã xác thực.");
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
-    public void onPlayerHandshake(PlayerHandshakeEvent event) {
-        if (!plugin.getConfig().getBoolean("domain-whitelist.enabled", false)) return;
+    public void onHandshake(PlayerHandshakeEvent event) {
+        if (!domainWhitelistEnabled) return;
+        String socketIp = normalizeIp(event.getOriginalSocketAddressHostname());
+        if (!proxyAllowed(socketIp)) {
+            event.setFailed(true);
+            event.failMessage(LEGACY.deserialize(proxyBlockedMessage));
+            plugin.getAuditLog().write("PROXY_IP_BLOCK", "<handshake>", "", socketIp,
+                    "serverHostname=" + safe(event.getServerHostname()));
+        }
+    }
 
-        String rawProxyIp = normalizeIpAddress(event.getOriginalSocketAddressHostname());
-        if (!isProxyAddressAllowed(rawProxyIp)) {
-            String kickMsg = plugin.getConfig().getString(
-                    "domain-whitelist.messages.proxy-blocked",
-                    "&cProxy/IP kết nối không hợp lệ. Vui lòng vào server qua proxy chính thức.");
-            blockHandshake(event, kickMsg);
-            addLog("PROXY_IP_BLOCK", "<handshake>", "unknown", rawProxyIp,
-                    "Raw socket IP is not whitelisted; serverHostname=" + safe(event.getServerHostname())
-                            + "; originalHandshake=" + safe(event.getOriginalHandshake()));
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void onPreLogin(AsyncPlayerPreLoginEvent event) {
+        if (event.getLoginResult() != AsyncPlayerPreLoginEvent.Result.ALLOWED) return;
+        String ip = normalizeIp(event.getAddress().getHostAddress());
+
+        GeoIPChecker.Result geo = geoIP.check(ip);
+        if (!geo.allowed()) {
+            deny(event, geoIpBlockMessage);
+            plugin.getAuditLog().write("GEOIP_BLOCK", event.getName(), event.getUniqueId().toString(), ip, geo.countryCode());
             return;
         }
 
-    }
-
-    @EventHandler
-    public void onAsyncPreLogin(AsyncPlayerPreLoginEvent event) {
-        String clientIp = normalizeIpAddress(event.getAddress().getHostAddress());
-
-        if (!this.geoIPChecker.isCountryAllowed(clientIp)) {
-            event.disallow(AsyncPlayerPreLoginEvent.Result.KICK_OTHER,
-                    color(this.plugin.getConfig().getString("geoip.block-message", "&cQuốc gia của bạn không được phép!")));
+        if (!hostnameAllowed(event.getHostname())) {
+            String template = normalizeHost(event.getHostname()).isEmpty() ? noDomainMessage : domainKickMessage;
+            deny(event, template.replace("%domain%", primaryDomain));
+            plugin.getAuditLog().write("DOMAIN_BLOCK", event.getName(), event.getUniqueId().toString(), ip,
+                    "hostname=" + safe(event.getHostname()));
             return;
         }
 
-        if (!isHostnameAllowed(event.getHostname())) {
-            List<String> allowedDomains = this.plugin.getConfig().getStringList("domain-whitelist.allowed-domains");
-            String firstDomain = allowedDomains.isEmpty() ? "Unknown" : allowedDomains.get(0);
-            String key = normalizeHost(event.getHostname()).isEmpty() ? "domain-whitelist.messages.no-domain-detected" : "domain-whitelist.messages.kick-message";
-            String kickMsg = color(this.plugin.getConfig().getString(key,
-                    "&cBạn không được phép kết nối trực tiếp vào server này!\n&eVui lòng sử dụng domain chính thống: &f%domain%"));
-            event.disallow(AsyncPlayerPreLoginEvent.Result.KICK_OTHER, kickMsg.replace("%domain%", firstDomain));
-            addLog("DOMAIN_BLOCK", event.getName(), event.getUniqueId().toString(), clientIp, "Hostname=" + event.getHostname());
+        PreAuthService.Decision preAuth = plugin.getPreAuthService().preLogin(event.getName(), event.getUniqueId());
+        if (!preAuth.allowed()) {
+            deny(event, premiumKickMessage);
+            plugin.getAuditLog().write("PREAUTH_BLOCK", event.getName(), event.getUniqueId().toString(), ip, preAuth.reason());
             return;
         }
-
-        if (!checkPremiumForProtectedOp(event, clientIp)) {
-            return;
+        if (preAuth.warning()) {
+            plugin.getLogger().warning("[PreAuth] Phiên không có bằng chứng Premium mạnh: "
+                    + event.getName() + " | " + preAuth.reason());
         }
 
-        checkAndRecordUuid(event, clientIp);
-    }
-
-    @EventHandler
-    public void onPlayerLogin(PlayerLoginEvent event) {
-        if (event.getResult() != PlayerLoginEvent.Result.ALLOWED) return;
-        if (!this.ipForwardingEnabled || event.getRealAddress() == null) return;
-        String realIp = normalizeIpAddress(event.getRealAddress().getHostAddress());
-        plugin.getAsyncExecutor().submit(() -> updateStoredIp(event.getPlayer().getName(), realIp));
-    }
-
-    private void blockHandshake(PlayerHandshakeEvent event, String legacyMessage) {
-        event.setCancelled(false);
-        event.setFailed(true);
-        event.failMessage(LEGACY_AMPERSAND.deserialize(legacyMessage == null ? "" : legacyMessage));
-    }
-
-    private boolean checkPremiumForProtectedOp(AsyncPlayerPreLoginEvent event, String ip) {
-        if (!plugin.getConfig().getBoolean("premium-auth.enabled", false)) return true;
-        if (!isOpWhitelisted(event.getName())) return true;
-
-        PremiumResult result = plugin.getPremiumAccountChecker().check(event.getName(), event.getUniqueId());
-        if (!result.isValid()) {
-            String kickMsg = buildSafePremiumKickMessage();
-            event.disallow(AsyncPlayerPreLoginEvent.Result.KICK_OTHER, kickMsg);
-            addLog("PREMIUM_AUTH_BLOCK", event.getName(), event.getUniqueId().toString(), ip, result.getReason());
-            return false;
-        }
-
-        boolean autoBypass2FA = plugin.getConfig().getBoolean("premium-auth.op-whitelist-premium-auto-bypass-2fa", false);
-        if (autoBypass2FA && !result.isLookupBypassed()) {
-            plugin.markPremium2FABypass(event.getUniqueId());
-        } else {
-            plugin.clearPremium2FABypass(event.getUniqueId());
-        }
-        addLog("PREMIUM_AUTH_OK", event.getName(), event.getUniqueId().toString(), ip,
-                "Official=" + result.getOfficialName() + "/" + result.getOfficialUuid() + ", autoBypass2FA=" + autoBypass2FA);
-        return true;
-    }
-
-    private String buildSafePremiumKickMessage() {
-        String configured = plugin.getConfig().getString("premium-auth.messages.kick-cracked-spoof",
-                "&cBạn không phải là tài khoản premium, vui lòng đăng nhập bằng premium");
-        if (configured == null || configured.isBlank()) {
-            configured = "&cBạn không phải là tài khoản premium, vui lòng đăng nhập bằng premium";
-        }
-
-        // Never expose internal verification details such as official/joined UUIDs to the player.
-        StringBuilder safe = new StringBuilder();
-        for (String line : configured.split("\\r?\\n")) {
-            String lower = ChatColor.stripColor(color(line)).toLowerCase(Locale.ROOT);
-            if (line.contains("%reason%") || lower.contains("uuid mismatch") || lower.contains("official=") || lower.contains("joined=")) {
-                continue;
-            }
-            if (!line.isBlank()) {
-                if (safe.length() > 0) safe.append('\n');
-                safe.append(line);
-            }
-        }
-
-        if (safe.length() == 0) {
-            safe.append("&cBạn không phải là tài khoản premium, vui lòng đăng nhập bằng premium");
-        }
-        return color(safe.toString());
-    }
-
-    private void checkAndRecordUuid(AsyncPlayerPreLoginEvent event, String ip) {
-        synchronized (uuidFileLock) {
-            try {
-                YamlConfiguration yml = YamlConfiguration.loadConfiguration(this.uuidPlayersFile);
-                String path = "players." + event.getName();
-                String uuid = event.getUniqueId().toString();
-                long now = System.currentTimeMillis();
-
-                if (!yml.contains(path)) {
-                    yml.set(path + ".uuid", uuid);
-                    yml.set(path + ".ip", ip);
-                    yml.set(path + ".firstJoin", now);
-                    yml.set(path + ".lastJoin", now);
-                    yml.save(this.uuidPlayersFile);
-                    addLog("NEW_USER", event.getName(), uuid, ip, "First join");
-                    return;
-                }
-
-                String storedUuid = yml.getString(path + ".uuid");
-                if (storedUuid != null && !storedUuid.equalsIgnoreCase(uuid)) {
-                    addLog("UUID_MISMATCH", event.getName(), uuid, ip, "UUID mismatch expected " + storedUuid);
-                    if (this.plugin.isDiscordEnabled()) {
-                        this.plugin.getDiscord().sendSpoofAlertEmbed(event.getName(), ip, "Unknown", storedUuid, "UUID Spoof Detected");
+        plugin.getSecurityDataStore().claimLegacyTrustedIp(event.getName(), event.getUniqueId());
+        SecurityDataStore.IdentityCheck identity = plugin.getSecurityDataStore().recordIdentity(event.getName(), event.getUniqueId(), ip);
+        if (identity.status() == SecurityDataStore.IdentityStatus.MISMATCH) {
+            deny(event, "&cUUID của tài khoản không khớp dữ liệu bảo mật. Vui lòng liên hệ quản trị viên.");
+            plugin.getAuditLog().write("UUID_MISMATCH", event.getName(), event.getUniqueId().toString(), ip,
+                    "expected=" + identity.expectedUuid());
+            if (plugin.isDiscordEnabled()) {
+                String playerName = event.getName();
+                String joinedUuid = event.getUniqueId().toString();
+                plugin.getSchedulerService().runGlobal(() -> {
+                    if (plugin.isDiscordEnabled()) {
+                        plugin.getDiscord().sendSpoofAlertEmbed(playerName, ip, "unknown", joinedUuid, "UUID mismatch");
                     }
-                    event.disallow(AsyncPlayerPreLoginEvent.Result.KICK_OTHER, color("&eUUID của bạn không khớp với dữ liệu hệ thống!\n&eVui lòng liên hệ Admin qua Discord ngay lập tức."));
-                    return;
-                }
-
-                yml.set(path + ".lastJoin", now);
-                yml.set(path + ".ip", ip);
-                yml.save(this.uuidPlayersFile);
-                addLog("JOIN", event.getName(), uuid, ip, "Đăng nhập lại");
-            } catch (IOException e) {
-                this.plugin.getLogger().warning("Failed to save UUID data: " + e.getMessage());
+                });
             }
         }
     }
 
-    private void updateStoredIp(String playerName, String realIp) {
-        synchronized (uuidFileLock) {
-            try {
-                YamlConfiguration yml = YamlConfiguration.loadConfiguration(this.uuidPlayersFile);
-                String path = "players." + playerName;
-                if (yml.contains(path)) {
-                    yml.set(path + ".realIp", realIp);
-                    yml.save(this.uuidPlayersFile);
-                }
-            } catch (IOException e) {
-                this.plugin.getLogger().warning("Failed to update real IP: " + e.getMessage());
-            }
-        }
+    private void deny(AsyncPlayerPreLoginEvent event, String message) {
+        event.disallow(AsyncPlayerPreLoginEvent.Result.KICK_OTHER, color(message));
     }
 
-    private boolean isHostnameAllowed(String rawHostname) {
-        if (!plugin.getConfig().getBoolean("domain-whitelist.enabled", false)) return true;
-        String hostname = normalizeHost(rawHostname);
-        if (hostname.isEmpty()) return false;
-        for (String domain : plugin.getConfig().getStringList("domain-whitelist.allowed-domains")) {
-            String allowed = normalizeHost(domain);
-            if (allowed.isEmpty()) continue;
-            if (hostname.equals(allowed)) return true;
-            if (plugin.getConfig().getBoolean("domain-whitelist.allow-subdomains", false) && hostname.endsWith("." + allowed)) return true;
+    private boolean hostnameAllowed(String raw) {
+        if (!domainWhitelistEnabled) return true;
+        String host = normalizeHost(raw);
+        if (host.isEmpty()) return false;
+        boolean subdomains = allowSubdomains;
+        for (String allowed : allowedDomains) {
+            if (host.equals(allowed) || (subdomains && host.endsWith('.' + allowed))) return true;
         }
         return false;
+    }
+
+    private boolean proxyAllowed(String ip) {
+        if (!strictProxyEnabled) return true;
+        List<String> rules = allowedProxyRules;
+        if (rules.isEmpty()) return !blockWhenProxyRulesEmpty;
+        for (String rule : rules) if (matchesIpRule(ip, rule)) return true;
+        return false;
+    }
+
+    private boolean matchesIpRule(String ip, String rawRule) {
+        if (rawRule == null) return false;
+        String rule = stripComment(rawRule);
+        if (rule.endsWith(".*")) return ip.startsWith(rule.substring(0, rule.length() - 1));
+        if (rule.contains("/")) return cidrMatch(ip, rule);
+        return normalizeIp(rule).equals(ip);
+    }
+
+    private boolean cidrMatch(String ip, String cidr) {
+        try {
+            String[] parts = cidr.split("/", 2);
+            byte[] address = InetAddress.getByName(ip).getAddress();
+            byte[] network = InetAddress.getByName(normalizeIp(parts[0])).getAddress();
+            if (address.length != network.length) return false;
+            int prefix = Integer.parseInt(parts[1]);
+            if (prefix < 0 || prefix > address.length * 8) return false;
+            for (int bit = 0; bit < prefix; bit++) {
+                int mask = 1 << (7 - bit % 8);
+                if ((address[bit / 8] & mask) != (network[bit / 8] & mask)) return false;
+            }
+            return true;
+        } catch (Exception ignored) { return false; }
     }
 
     private String normalizeHost(String raw) {
@@ -238,154 +193,37 @@ public class PacketIpCheck implements Listener {
         int nul = host.indexOf('\0');
         if (nul >= 0) host = host.substring(0, nul);
         host = host.trim().toLowerCase(Locale.ROOT);
-        if (host.endsWith(".")) host = host.substring(0, host.length() - 1);
         if (host.startsWith("[")) {
             int end = host.indexOf(']');
             if (end > 0) host = host.substring(1, end);
         } else {
             int colon = host.lastIndexOf(':');
-            if (colon > -1 && host.indexOf(':') == colon && isAllDigits(host.substring(colon + 1))) {
-                host = host.substring(0, colon);
-            }
+            if (colon > 0 && host.indexOf(':') == colon && host.substring(colon + 1).matches("\\d+")) host = host.substring(0, colon);
         }
-        try {
-            host = IDN.toASCII(host, IDN.USE_STD3_ASCII_RULES).toLowerCase(Locale.ROOT);
-        } catch (IllegalArgumentException ignored) {
-            return "";
-        }
-        return host;
+        if (host.endsWith(".")) host = host.substring(0, host.length() - 1);
+        try { return IDN.toASCII(host, IDN.USE_STD3_ASCII_RULES).toLowerCase(Locale.ROOT); }
+        catch (IllegalArgumentException ignored) { return ""; }
     }
 
-    private boolean isProxyAddressAllowed(String ip) {
-        if (!plugin.getConfig().getBoolean("domain-whitelist.enabled", false)) return true;
-        if (!plugin.getConfig().getBoolean("domain-whitelist.strict-proxy-ip.enabled", true)) return true;
-
-        String normalizedIp = normalizeIpAddress(ip);
-        if (normalizedIp.isEmpty()) return false;
-
-        List<String> allowed = plugin.getConfig().getStringList("domain-whitelist.strict-proxy-ip.allowed-proxy-ips");
-        if (allowed.isEmpty()) {
-            return !plugin.getConfig().getBoolean("domain-whitelist.strict-proxy-ip.block-when-empty", true);
-        }
-        for (String entry : allowed) {
-            if (matchesIpRule(normalizedIp, entry)) return true;
-        }
-        return false;
-    }
-
-    private boolean matchesIpRule(String ip, String rule) {
-        if (rule == null || rule.trim().isEmpty()) return false;
-        String cleanRule = stripInlineComment(rule.trim());
-        if (cleanRule.isEmpty()) return false;
-
-        if (cleanRule.endsWith(".*")) {
-            String prefix = cleanRule.substring(0, cleanRule.length() - 1);
-            return ip.startsWith(prefix);
-        }
-
-        if (cleanRule.contains("/")) {
-            return cidrMatch(ip, cleanRule);
-        }
-
-        String normalizedRule = normalizeIpAddress(cleanRule);
-        return !normalizedRule.isEmpty() && normalizedRule.equals(ip);
-    }
-
-    private boolean cidrMatch(String ip, String cidr) {
-        try {
-            String[] parts = cidr.split("/", 2);
-            if (parts.length != 2) return false;
-
-            String networkPart = normalizeIpAddress(parts[0]);
-            if (networkPart.isEmpty()) return false;
-
-            byte[] address = InetAddress.getByName(ip).getAddress();
-            byte[] network = InetAddress.getByName(networkPart).getAddress();
-            if (address.length != network.length) return false;
-
-            int prefix = Integer.parseInt(parts[1].trim());
-            int maxPrefix = address.length * 8;
-            if (prefix < 0 || prefix > maxPrefix) return false;
-
-            int fullBytes = prefix / 8;
-            int remainingBits = prefix % 8;
-            for (int i = 0; i < fullBytes; i++) {
-                if (address[i] != network[i]) return false;
-            }
-            if (remainingBits == 0) return true;
-            if (fullBytes >= address.length) return true;
-            int mask = 0xFF << (8 - remainingBits);
-            return (address[fullBytes] & mask) == (network[fullBytes] & mask);
-        } catch (Exception ignored) {
-            return false;
-        }
-    }
-
-    private String normalizeIpAddress(String raw) {
+    private String normalizeIp(String raw) {
         if (raw == null) return "";
-        String value = stripInlineComment(raw.trim());
-        if (value.isEmpty()) return "";
-
+        String value = stripComment(raw.trim());
         if (value.startsWith("/")) value = value.substring(1);
-
         if (value.startsWith("[")) {
             int end = value.indexOf(']');
             if (end > 0) value = value.substring(1, end);
         } else {
             int colon = value.lastIndexOf(':');
-            if (colon > -1 && value.indexOf(':') == colon && isAllDigits(value.substring(colon + 1))) {
-                value = value.substring(0, colon);
-            }
+            if (colon > 0 && value.indexOf(':') == colon && value.substring(colon + 1).matches("\\d+")) value = value.substring(0, colon);
         }
-
-        try {
-            return InetAddress.getByName(value).getHostAddress();
-        } catch (Exception ignored) {
-            return value;
-        }
+        try { return InetAddress.getByName(value).getHostAddress(); }
+        catch (Exception ignored) { return value; }
     }
 
-    private String stripInlineComment(String value) {
-        int comment = value.indexOf('#');
-        if (comment >= 0) value = value.substring(0, comment);
-        return value.trim();
+    private String stripComment(String value) {
+        int index = value.indexOf('#');
+        return (index >= 0 ? value.substring(0, index) : value).trim();
     }
-
-    private boolean isAllDigits(String value) {
-        if (value == null || value.isEmpty()) return false;
-        for (int i = 0; i < value.length(); i++) {
-            if (!Character.isDigit(value.charAt(i))) return false;
-        }
-        return true;
-    }
-
-    private boolean isOpWhitelisted(String name) {
-        Set<String> names = new HashSet<>(plugin.getConfig().getStringList("op-whitelist"));
-        for (String n : names) if (n.equalsIgnoreCase(name)) return true;
-        return false;
-    }
-
-    private String color(String text) {
-        return ChatColor.translateAlternateColorCodes('&', text == null ? "" : text);
-    }
-
-    private String safe(String text) {
-        if (text == null) return "";
-        return text.replace('\n', ' ').replace('\r', ' ');
-    }
-
-    private void addLog(String type, String player, String uuid, String ip, String detail) {
-        synchronized (uuidFileLock) {
-            try {
-                YamlConfiguration logYml = YamlConfiguration.loadConfiguration(this.uuidLogFile);
-                List<String> logs = logYml.getStringList("logs");
-                String time = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date());
-                logs.add("[" + time + "] [" + type + "] Player=" + player + " | UUID=" + uuid + " | IP=" + ip + " | Detail=" + detail);
-                logYml.set("logs", logs);
-                logYml.save(this.uuidLogFile);
-            } catch (IOException e) {
-                this.plugin.getLogger().warning("Failed to write security log: " + e.getMessage());
-            }
-        }
-    }
+    private String color(String text) { return ChatColor.translateAlternateColorCodes('&', text == null ? "" : text); }
+    private String safe(String text) { return text == null ? "" : text.replace('\n', ' ').replace('\r', ' '); }
 }

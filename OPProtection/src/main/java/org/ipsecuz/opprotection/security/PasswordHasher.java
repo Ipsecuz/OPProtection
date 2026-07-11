@@ -3,57 +3,52 @@ package org.ipsecuz.opprotection.security;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
-import java.security.spec.KeySpec;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.Locale;
 import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.PBEKeySpec;
 
+/** Password hashing and legacy migration helpers. */
 public final class PasswordHasher {
     private static final String PREFIX = "pbkdf2_sha256";
     private static final int ITERATIONS = 120_000;
     private static final int SALT_BYTES = 16;
     private static final int KEY_BITS = 256;
+    private static final int MIN_ACCEPTED_ITERATIONS = 50_000;
+    private static final int MAX_ACCEPTED_ITERATIONS = 1_000_000;
     private static final SecureRandom RANDOM = new SecureRandom();
-    private static final char[] GENERATED_PASSWORD_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789@#$%+=_-".toCharArray();
+    private static final char[] GENERATED_PASSWORD_CHARS =
+            "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789@#$%+=_-".toCharArray();
 
-    private PasswordHasher() {
-    }
+    private PasswordHasher() { }
 
     public static String hash(String rawPassword) {
-        if (rawPassword == null) {
-            throw new IllegalArgumentException("Password cannot be null");
-        }
+        if (rawPassword == null) throw new IllegalArgumentException("Password cannot be null");
         byte[] salt = new byte[SALT_BYTES];
+        char[] password = rawPassword.toCharArray();
         RANDOM.nextBytes(salt);
-        byte[] derived = pbkdf2(rawPassword.toCharArray(), salt, ITERATIONS, KEY_BITS);
-        return PREFIX + "$" + ITERATIONS + "$"
-                + Base64.getEncoder().encodeToString(salt) + "$"
-                + Base64.getEncoder().encodeToString(derived);
+        try {
+            byte[] derived = pbkdf2(password, salt, ITERATIONS, KEY_BITS);
+            return PREFIX + "$" + ITERATIONS + "$"
+                    + Base64.getEncoder().encodeToString(salt) + "$"
+                    + Base64.getEncoder().encodeToString(derived);
+        } finally {
+            Arrays.fill(password, '\0');
+        }
     }
 
     public static boolean verify(String rawPassword, String storedValue) {
-        if (rawPassword == null || storedValue == null || storedValue.isBlank()) {
-            return false;
-        }
-
-        if (storedValue.startsWith(PREFIX + "$")) {
-            return verifyPbkdf2(rawPassword, storedValue);
-        }
-
+        if (rawPassword == null || storedValue == null || storedValue.isBlank()) return false;
+        if (storedValue.startsWith(PREFIX + "$")) return verifyPbkdf2(rawPassword, storedValue);
         if (isLegacySha256(storedValue)) {
             return MessageDigest.isEqual(
                     legacySha256(rawPassword).getBytes(StandardCharsets.UTF_8),
-                    storedValue.toLowerCase(Locale.ROOT).getBytes(StandardCharsets.UTF_8)
-            );
+                    storedValue.toLowerCase(Locale.ROOT).getBytes(StandardCharsets.UTF_8));
         }
-
-        return MessageDigest.isEqual(
-                rawPassword.getBytes(StandardCharsets.UTF_8),
-                storedValue.getBytes(StandardCharsets.UTF_8)
-        );
+        return MessageDigest.isEqual(rawPassword.getBytes(StandardCharsets.UTF_8),
+                storedValue.getBytes(StandardCharsets.UTF_8));
     }
-
 
     public static String generateRandomPassword(int length) {
         int safeLength = Math.max(16, length);
@@ -65,11 +60,12 @@ public final class PasswordHasher {
     }
 
     public static boolean isStrongHash(String storedValue) {
-        return storedValue != null && storedValue.startsWith(PREFIX + "$");
+        return parse(storedValue) != null;
     }
 
     public static boolean needsRehash(String storedValue) {
-        return !isStrongHash(storedValue);
+        ParsedHash parsed = parse(storedValue);
+        return parsed == null || parsed.iterations < ITERATIONS || parsed.hash.length * 8 < KEY_BITS;
     }
 
     public static boolean isLegacySha256(String storedValue) {
@@ -77,44 +73,53 @@ public final class PasswordHasher {
     }
 
     private static boolean verifyPbkdf2(String rawPassword, String storedValue) {
+        ParsedHash parsed = parse(storedValue);
+        if (parsed == null) return false;
+        char[] password = rawPassword.toCharArray();
+        try {
+            byte[] actual = pbkdf2(password, parsed.salt, parsed.iterations, parsed.hash.length * 8);
+            return MessageDigest.isEqual(parsed.hash, actual);
+        } finally {
+            Arrays.fill(password, '\0');
+        }
+    }
+
+    private static ParsedHash parse(String storedValue) {
+        if (storedValue == null || storedValue.isBlank()) return null;
         try {
             String[] parts = storedValue.split("\\$", 4);
-            if (parts.length != 4 || !PREFIX.equals(parts[0])) {
-                return false;
-            }
+            if (parts.length != 4 || !PREFIX.equals(parts[0])) return null;
             int iterations = Integer.parseInt(parts[1]);
+            if (iterations < MIN_ACCEPTED_ITERATIONS || iterations > MAX_ACCEPTED_ITERATIONS) return null;
             byte[] salt = Base64.getDecoder().decode(parts[2]);
-            byte[] expected = Base64.getDecoder().decode(parts[3]);
-            byte[] actual = pbkdf2(rawPassword.toCharArray(), salt, iterations, expected.length * 8);
-            return MessageDigest.isEqual(expected, actual);
-        } catch (Exception ignored) {
-            return false;
+            byte[] hash = Base64.getDecoder().decode(parts[3]);
+            if (salt.length < 8 || salt.length > 64 || hash.length < 16 || hash.length > 64) return null;
+            return new ParsedHash(iterations, salt, hash);
+        } catch (RuntimeException ignored) {
+            return null;
         }
     }
 
     private static byte[] pbkdf2(char[] password, byte[] salt, int iterations, int keyBits) {
+        PBEKeySpec spec = new PBEKeySpec(password, salt, iterations, keyBits);
         try {
             SecretKeyFactory factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
-            KeySpec spec = new PBEKeySpec(password, salt, iterations, keyBits);
             return factory.generateSecret(spec).getEncoded();
-        } catch (Exception e) {
-            throw new IllegalStateException("Cannot hash OPProtection password", e);
+        } catch (Exception ex) {
+            throw new IllegalStateException("Cannot hash OPProtection password", ex);
+        } finally {
+            spec.clearPassword();
         }
     }
 
     private static String legacySha256(String raw) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] encoded = digest.digest(raw.getBytes(StandardCharsets.UTF_8));
-            StringBuilder hex = new StringBuilder(encoded.length * 2);
-            for (byte b : encoded) {
-                String s = Integer.toHexString(0xff & b);
-                if (s.length() == 1) hex.append('0');
-                hex.append(s);
-            }
-            return hex.toString();
-        } catch (Exception e) {
-            throw new IllegalStateException("Cannot verify legacy SHA-256 password", e);
+            return java.util.HexFormat.of().formatHex(digest.digest(raw.getBytes(StandardCharsets.UTF_8)));
+        } catch (Exception ex) {
+            throw new IllegalStateException("Cannot verify legacy SHA-256 password", ex);
         }
     }
+
+    private record ParsedHash(int iterations, byte[] salt, byte[] hash) { }
 }

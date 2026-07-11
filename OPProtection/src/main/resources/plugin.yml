@@ -1,31 +1,32 @@
 name: OPProtection
-version: '2.5.4-folia'
+version: '${project.version}'
 main: org.ipsecuz.opprotection.OPProtection
-api-version: '1.13'
+api-version: '1.21'
 load: POSTWORLD
-author: 'Ipsecuz_, FoxStudio'
-loadbefore: [PacketEvents]
+authors: [Ipsecuz_, FoxStudio]
+description: Professional protection for OP and wildcard-permission accounts.
+depend: [packetevents]
 softdepend: [LuckPerms]
 folia-supported: true
 commands:
   oppass:
-    description: Quản lý xác minh OP an toàn, ẩn mật khẩu khỏi command log
-    usage: /<command> <password|createpass|resetpass|confirm|resetip>
+    description: Xác minh và quản lý mật khẩu bảo mật OP
+    usage: /<command> <password|change|createpass|resetpass|confirm|resetip>
     permission: opprotection.oppass
     permission-message: ""
   opreload:
-    description: Reload cấu hình plugin
-    usage: /<command>
+    description: Reload OPProtection hoặc quản lý baseline SHA-256
+    usage: /<command> [hashcheck|hashaccept]
     permission: opprotection.opreload
-    permission-message: Bạn không có quyền sử dụng lệnh này!
+    permission-message: ""
   verify:
-    description: Yêu cầu xác minh Discord
+    description: Tạo yêu cầu xác minh Discord một lần
     usage: /<command>
     permission: opprotection.verify
     permission-message: ""
   opverify:
-    description: Xác minh player bằng mã xác minh (admin)
-    usage: /<command> <code> [player-name]
+    description: Phê duyệt mã Discord-Sync của một người chơi
+    usage: /<command> <player> <one-time-code>
     permission: opprotection.opverify
     permission-message: ""
 permissions:
@@ -37,5 +38,10 @@ permissions:
     default: op
   opprotection.opverify:
     default: op
+  opprotection.bypass.blacklist:
+    default: false
+  opprotection.emergency:
+    description: Cho phép admin đã xác minh tạo yêu cầu /op hoặc thu hồi /deop an toàn trong game
+    default: false
   opprotection.temp:
     default: false

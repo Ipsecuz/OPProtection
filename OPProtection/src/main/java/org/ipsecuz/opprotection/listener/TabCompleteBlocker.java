@@ -1,183 +1,97 @@
 package org.ipsecuz.opprotection.listener;
 
-import com.github.retrooper.packetevents.event.PacketListener;
+import com.github.retrooper.packetevents.event.PacketListenerAbstract;
 import com.github.retrooper.packetevents.event.PacketReceiveEvent;
 import com.github.retrooper.packetevents.protocol.packettype.PacketType;
 import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientTabComplete;
-import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerCommandSendEvent;
 import org.ipsecuz.opprotection.OPProtection;
 
-import java.util.*;
-import java.util.stream.Collectors;
+import java.util.HashSet;
+import java.util.Locale;
+import java.util.Set;
 
-public class TabCompleteBlocker implements Listener, PacketListener {
+/** Hides sensitive commands from both Bukkit and packet-level command suggestions. */
+public final class TabCompleteBlocker extends PacketListenerAbstract implements Listener {
+    private static final Set<String> DEFAULT_TARGET_COMMANDS = Set.of(
+            "version", "ver", "about", "bukkit",
+            "bukkit:version", "bukkit:ver", "bukkit:about");
+
     private final OPProtection plugin;
-    private final Set<String> DEFAULT_TARGET_COMMANDS = Set.of(
-            "version", "ver", "about","bukkit",
-            "bukkit:version", "bukkit:ver", "bukkit:about"
-    );
-    private Set<String> targetCommands;
-    private List<String> blockedCommands;
+    private volatile Set<String> blockedCommands = Set.of();
+    private volatile boolean enabled;
+    private volatile boolean debug;
 
     public TabCompleteBlocker(OPProtection plugin) {
         this.plugin = plugin;
-        loadConfig();
-        registerBukkitListener();
-        registerPacketListener();
+        reload();
     }
 
-    private void loadConfig() {
-        FileConfiguration config = plugin.getConfig();
-
-        List<String> configTargets = config.getStringList("tab-complete-block.target-commands");
-        this.targetCommands = configTargets.isEmpty() ?
-                DEFAULT_TARGET_COMMANDS :
-                new HashSet<>(configTargets.stream()
-                        .map(String::toLowerCase)
-                        .collect(Collectors.toSet())
-                );
-
-        this.blockedCommands = config.getStringList("tab-complete-block.blocked-commands");
-    }
-
-    private void registerPacketListener() {
-        try {
-
-            plugin.getLogger().info("Tab complete blocker ready (Bukkit event mode)");
-        } catch (Exception e) {
-            plugin.getLogger().warning("Could not register packet listener: " + e.getMessage());
-        }
-    }
-
-    private void registerBukkitListener() {
-        plugin.getServer().getPluginManager().registerEvents(this, plugin);
+    public void reload() {
+        this.enabled = plugin.getConfig().getBoolean("tab-complete-block.enabled", true);
+        this.debug = plugin.getConfig().getBoolean("tab-complete-block.debug", false);
+        Set<String> values = new HashSet<>();
+        var targets = plugin.getConfig().getStringList("tab-complete-block.target-commands");
+        if (targets.isEmpty()) values.addAll(DEFAULT_TARGET_COMMANDS);
+        else targets.forEach(value -> addNormalized(values, value));
+        plugin.getConfig().getStringList("tab-complete-block.blocked-commands")
+                .forEach(value -> addNormalized(values, value));
+        blockedCommands = Set.copyOf(values);
     }
 
     @Override
     public void onPacketReceive(PacketReceiveEvent event) {
-        if (!isEnabled()) return;
-
+        if (!enabled() || event.getPacketType() != PacketType.Play.Client.TAB_COMPLETE) return;
         try {
-            if (event.getPacketType() == PacketType.Play.Client.TAB_COMPLETE) {
-                try {
-                    WrapperPlayClientTabComplete wrapper = new WrapperPlayClientTabComplete(event);
-                    String text = wrapper.getText();
-
-                    if (text != null && isBlockedCommand(text)) {
-                        event.setCancelled(true);
-                        if (isDebugMode()) {
-                            logDebug("Blocked client tab complete: " + text);
-                        }
-                    }
-                } catch (Exception ignored) {
-                    
-                }
+            String text = new WrapperPlayClientTabComplete(event).getText();
+            if (isBlockedInput(text)) {
+                event.setCancelled(true);
+                debug("Đã chặn packet tab-complete: " + sanitize(text));
             }
-        } catch (Exception e) {
-            plugin.getLogger().warning("Error processing client tab complete packet: " + e.getMessage());
+        } catch (RuntimeException ex) {
+            if (debugEnabled()) plugin.getLogger().warning("[TabComplete] Không thể đọc packet: " + ex.getMessage());
         }
     }
-
 
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onCommandSend(PlayerCommandSendEvent event) {
-        if (!isEnabled()) return;
-
-        List<String> originalCommands = new ArrayList<>(event.getCommands());
-        List<String> filteredCommands = new ArrayList<>();
-
-        for (String command : originalCommands) {
-            if (isBlockedCommand(command)) {
-                if (isDebugMode()) {
-                    logDebug("Blocked command in tab complete: " + command);
-                }
-                continue;
-            }
-            
-
-            if (command.contains(":")) {
-                if (isDebugMode()) {
-                    logDebug("Blocked namespaced command: " + command);
-                }
-                continue;
-            }
-            
-            filteredCommands.add(command);
-        }
-
-        event.getCommands().clear();
-        event.getCommands().addAll(filteredCommands);
-        
-        if (isDebugMode()) {
-            logDebug("Filtered from " + originalCommands.size() + " to " + filteredCommands.size() + " commands");
-        }
+        if (!enabled()) return;
+        int before = event.getCommands().size();
+        event.getCommands().removeIf(command -> command.contains(":") || isBlockedInput(command));
+        debug("Đã lọc " + (before - event.getCommands().size()) + " command suggestion cho "
+                + event.getPlayer().getName());
     }
 
-    private boolean isEnabled() {
-        return plugin.getConfig().getBoolean("tab-complete-block.enabled", true);
+    private boolean isBlockedInput(String input) {
+        if (input == null || input.isBlank()) return false;
+        String value = input.trim().toLowerCase(Locale.ROOT);
+        while (value.startsWith("/")) value = value.substring(1);
+        int space = value.indexOf(' ');
+        String command = space >= 0 ? value.substring(0, space) : value;
+        if (blockedCommands.contains(command)) return true;
+        int colon = command.indexOf(':');
+        return colon >= 0 && blockedCommands.contains(command.substring(colon + 1));
     }
 
-    private boolean isDebugMode() {
-        return plugin.getConfig().getBoolean("tab-complete-block.debug", false);
+    private static void addNormalized(Set<String> values, String raw) {
+        if (raw == null) return;
+        String value = raw.trim().toLowerCase(Locale.ROOT);
+        while (value.startsWith("/")) value = value.substring(1);
+        if (!value.isBlank()) values.add(value);
     }
 
-    private void logDebug(String message) {
-        plugin.getLogger().info("[TabCompleteBlocker] " + message);
+    private boolean enabled() { return enabled; }
+
+    private boolean debugEnabled() { return debug; }
+
+    private void debug(String message) {
+        if (debugEnabled()) plugin.getLogger().info("[TabComplete] " + message);
     }
 
-    private boolean shouldRemoveCommand(String command) {
-        String lowerCommand = command.toLowerCase();
-
-        if (lowerCommand.contains(":") && !targetCommands.contains(lowerCommand)) {
-            return true;
-        }
-
-        return false;
-    }
-
-    private boolean isBlockedCommand(String command) {
-        if (command == null || command.isEmpty()) {
-            return false;
-        }
-
-        String lowerCommand = command.toLowerCase();
-
-        if (lowerCommand.startsWith("/")) {
-            lowerCommand = lowerCommand.substring(1);
-        }
-
-        if (lowerCommand.contains(":")) {
-            String[] parts = lowerCommand.split(":", 2);
-            if (parts.length > 1) {
-                lowerCommand = parts[1];
-            }
-        }
-
-        for (String blocked : blockedCommands) {
-            String blockedLower = blocked.toLowerCase();
-
-            if (matchesCommandPrefix(lowerCommand, blockedLower)) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static boolean matchesCommandPrefix(String buffer, String cmd) {
-        if (buffer.equals(cmd)) {
-            return true;
-        }
-
-        if (buffer.length() > cmd.length() && buffer.startsWith(cmd)) {
-            char next = buffer.charAt(cmd.length());
-            return next == ' ' || next == ':' || next == '/';
-        }
-
-        return false;
+    private static String sanitize(String value) {
+        return value == null ? "" : value.replace('\n', ' ').replace('\r', ' ');
     }
 }

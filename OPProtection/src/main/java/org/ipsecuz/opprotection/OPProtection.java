@@ -1,5 +1,7 @@
 package org.ipsecuz.opprotection;
 
+import com.github.retrooper.packetevents.PacketEvents;
+import org.bstats.bukkit.Metrics;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.command.CommandSender;
@@ -7,123 +9,253 @@ import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
-import org.ipsecuz.opprotection.listener.CommandBlocker;
-import org.ipsecuz.opprotection.listener.PacketIpCheck;
-import org.ipsecuz.opprotection.listener.TabCompleteBlocker;
-import org.ipsecuz.opprotection.listener.F3BrandBlocker;
-import org.ipsecuz.opprotection.listener.SecureOPPassCommandHider;
-import org.ipsecuz.opprotection.listener.SecureOPPassPacketListener;
 import org.ipsecuz.opprotection.command.CommandOPPass;
 import org.ipsecuz.opprotection.command.CommandOPReload;
-import org.ipsecuz.opprotection.command.CommandVerify;
 import org.ipsecuz.opprotection.command.CommandOpVerify;
+import org.ipsecuz.opprotection.command.CommandVerify;
 import org.ipsecuz.opprotection.discord.DiscordBot;
 import org.ipsecuz.opprotection.discord.DiscordEventListener;
+import org.ipsecuz.opprotection.listener.CommandBlocker;
+import org.ipsecuz.opprotection.listener.F3BrandBlocker;
+import org.ipsecuz.opprotection.listener.OPListener;
+import org.ipsecuz.opprotection.listener.PacketIpCheck;
+import org.ipsecuz.opprotection.listener.SecureOPPassCommandHider;
+import org.ipsecuz.opprotection.listener.SecureOPPassPacketListener;
+import org.ipsecuz.opprotection.listener.TabCompleteBlocker;
+import org.ipsecuz.opprotection.managers.DiscordSyncModule;
 import org.ipsecuz.opprotection.managers.IPManager;
 import org.ipsecuz.opprotection.managers.OpManager;
-import org.ipsecuz.opprotection.managers.DiscordSyncModule;
-import org.ipsecuz.opprotection.utils.ConfigCache;
-import org.ipsecuz.opprotection.security.PremiumAccountChecker;
+import org.ipsecuz.opprotection.scheduler.SchedulerService;
 import org.ipsecuz.opprotection.security.PasswordHasher;
+import org.ipsecuz.opprotection.security.PluginIntegrityMonitor;
+import org.ipsecuz.opprotection.security.PreAuthService;
+import org.ipsecuz.opprotection.security.PremiumAccountChecker;
+import org.ipsecuz.opprotection.security.SecurityAuditLog;
+import org.ipsecuz.opprotection.storage.SecurityDataStore;
+import org.ipsecuz.opprotection.utils.ConfigCache;
 
 import java.io.File;
-import java.util.*;
-import java.util.concurrent.ScheduledExecutorService;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
-import java.util.logging.Level;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
-public class OPProtection extends JavaPlugin {
+public final class OPProtection extends JavaPlugin {
+    private static final Pattern HEX_COLOR = Pattern.compile("(?i)&#([0-9a-f]{6})");
+    private final ScheduledExecutorService asyncExecutor = Executors.newScheduledThreadPool(3, new SecurityThreadFactory());
+    private final AtomicBoolean configSaveScheduled = new AtomicBoolean();
+    private final Set<UUID> premium2FABypass = ConcurrentHashMap.newKeySet();
+
+    private SchedulerService schedulerService;
+    private SecurityDataStore securityDataStore;
+    private SecurityAuditLog auditLog;
+    private ConfigCache configCache;
+    private PremiumAccountChecker premiumAccountChecker;
+    private PreAuthService preAuthService;
+    private PluginIntegrityMonitor integrityMonitor;
     private OpManager opManager;
     private IPManager ipManager;
-    private DiscordBot discordBot;
-    private DiscordEventListener discordEventListener;
     private DiscordSyncModule discordSyncModule;
-    private ConfigCache configCache;
-    private FileConfiguration messagesConfig;
-    private FileConfiguration embedConfig;
+    private volatile DiscordBot discordBot;
+    private DiscordEventListener discordEventListener;
     private F3BrandBlocker f3BrandBlocker;
-    private PremiumAccountChecker premiumAccountChecker;
+    private PacketIpCheck packetIpCheck;
+    private TabCompleteBlocker tabCompleteBlocker;
+    private CommandBlocker commandBlocker;
+    private SecureOPPassPacketListener secureOPPassPacketListener;
     private CommandOPPass commandOPPass;
-    private final ScheduledExecutorService asyncExecutor = Executors.newScheduledThreadPool(2);
-    private volatile boolean needsConfigSave = false;
-    private final Set<UUID> premium2FABypass = java.util.concurrent.ConcurrentHashMap.newKeySet();
-    private static final String RESET = "\u001B[0m";
-
+    private volatile FileConfiguration messagesConfig;
+    private volatile FileConfiguration embedConfig;
+    @SuppressWarnings("unused")
+    private Metrics metrics;
 
     @Override
     public void onEnable() {
-        printLogo();
-        long startTime = System.currentTimeMillis();
-
+        long started = System.currentTimeMillis();
         saveDefaultConfig();
+
+        this.schedulerService = new SchedulerService(this, asyncExecutor);
+        printLogo();
+        this.securityDataStore = new SecurityDataStore(this);
+        if (securityDataStore.migrateLegacyConfig(getConfig())) saveConfig();
         migrateLegacyGlobalPassword();
         loadMessagesConfig();
         loadEmbedsConfig();
 
+        this.auditLog = new SecurityAuditLog(this, schedulerService.asyncExecutor());
         this.configCache = new ConfigCache(this);
         this.premiumAccountChecker = new PremiumAccountChecker(this);
-        
-        initializePacketEvents();
-        
+        this.preAuthService = new PreAuthService(this, premiumAccountChecker);
+
+        if (!validatePacketEvents()) {
+            Bukkit.getPluginManager().disablePlugin(this);
+            return;
+        }
         loadManagers();
         registerCommands();
         registerListeners();
-        startAsyncConfigSaver();
+        validateSecurityConfiguration();
+        initializeMetrics();
 
-        long loadTime = System.currentTimeMillis() - startTime;
-        getLogger().info("[OPProtection] Enabled successfully in " + loadTime + "ms");
-        getLogger().info("[OPProtection] Version: " + getDescription().getVersion());
+        this.integrityMonitor = new PluginIntegrityMonitor(this);
+        this.integrityMonitor.start();
+
+        getLogger().info("Bật thành công trong " + (System.currentTimeMillis() - started) + "ms.");
+        if (getConfig().getBoolean("premium-auth.enabled", false)) {
+            getLogger().info("PremiumAuth mode: " + premiumAccountChecker.runtimeMode().name());
+        }
     }
 
     @Override
     public void onDisable() {
-        if (opManager != null) {
-            opManager.cancelAllCountdowns();
-            for (Player p : Bukkit.getOnlinePlayers()) {
-                if (opManager.isLocked(p)) opManager.handleLogout(p);
-            }
+        if (integrityMonitor != null) integrityMonitor.stop();
+        if (opManager != null) opManager.cancelAllCountdowns();
+        stopDiscord();
+        if (metrics != null) {
+            try { metrics.shutdown(); } catch (Throwable ignored) { }
         }
-        if (discordEventListener != null) discordEventListener.shutdown();
-        if (discordBot != null) discordBot.shutdown();
-        if (needsConfigSave) super.saveConfig();
-
+        if (securityDataStore != null) securityDataStore.flushBlocking();
+        if (configSaveScheduled.get()) {
+            try { saveConfig(); } catch (Exception ignored) { }
+        }
         asyncExecutor.shutdown();
         try {
             if (!asyncExecutor.awaitTermination(5, TimeUnit.SECONDS)) asyncExecutor.shutdownNow();
-        } catch (InterruptedException e) {
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
             asyncExecutor.shutdownNow();
         }
-        getLogger().info("[OPProtection] Disabled safely.");
+        getLogger().info("[OPProtection] Đã tắt an toàn.");
     }
 
     private void loadManagers() {
-        Set<String> opWhitelist = new HashSet<>(getConfig().getStringList("op-whitelist"));
-        String opPassword = getConfig().getString("op-password", "defaultpass");
-        int passTimeout = getConfig().getInt("pass-timeout", 60);
-        Set<String> disabledCommands = new HashSet<>(getConfig().getStringList("disabled-commands"));
-        List<String> logoutActions = getConfig().getStringList("logout-actions");
-
-        this.opManager = new OpManager(this, opWhitelist, opPassword, passTimeout, disabledCommands, logoutActions);
+        this.opManager = new OpManager(this, normalizedWhitelist(), getConfig().getString("op-password", ""),
+                getConfig().getInt("pass-timeout", 60), normalizedCommands("disabled-commands"),
+                getConfig().getStringList("logout-actions"));
         this.ipManager = new IPManager(this);
         this.discordSyncModule = new DiscordSyncModule(this);
+        startDiscord();
+    }
 
-        if (getConfig().getBoolean("discord.enabled", false)) {
-            String token = getConfig().getString("discord.token");
-            String channelId = getConfig().getString("discord.channel-id");
-            if (token != null && !token.isEmpty() && channelId != null && !channelId.isEmpty()) {
-                try {
-                    this.discordBot = new DiscordBot(this, token, channelId);
-                    getLogger().info("[OPProtection] Discord bot enabled.");
-                    
-                    if (discordBot.isConnected()) {
-                        this.discordEventListener = new DiscordEventListener(this, discordBot.getClient());
-                        getLogger().info("[OPProtection] Discord event listener registered.");
+    private void stopDiscord() {
+        if (discordEventListener != null) {
+            discordEventListener.shutdown();
+            discordEventListener = null;
+        }
+        if (discordBot != null) {
+            discordBot.shutdown();
+            discordBot = null;
+        }
+    }
+
+    private void startDiscord() {
+        if (!getConfig().getBoolean("discord.enabled", false)) return;
+        String token = getConfig().getString("discord.token", "").trim();
+        String channelId = getConfig().getString("discord.channel-id", "").trim();
+        if (token.isBlank() || channelId.isBlank() || token.equals("YOUR_BOT_TOKEN") || channelId.equals("YOUR_CHANNEL_ID")) {
+            getLogger().warning("[Discord] Đã bật nhưng token/channel-id chưa hợp lệ.");
+            return;
+        }
+        try {
+            this.discordBot = new DiscordBot(this, token, channelId);
+            this.discordEventListener = new DiscordEventListener(this, discordBot.getClient());
+        } catch (RuntimeException ex) {
+            getLogger().severe("[Discord] Không thể khởi động bot: " + ex.getMessage());
+        }
+    }
+
+    private void registerCommands() {
+        this.commandOPPass = new CommandOPPass(this, opManager, ipManager);
+        if (getCommand("oppass") != null) getCommand("oppass").setExecutor(commandOPPass);
+        if (getCommand("opreload") != null) getCommand("opreload").setExecutor(new CommandOPReload(this));
+        if (getCommand("verify") != null) getCommand("verify").setExecutor(new CommandVerify(this));
+        if (getCommand("opverify") != null) getCommand("opverify").setExecutor(new CommandOpVerify(this));
+    }
+
+    private void registerListeners() {
+        Bukkit.getPluginManager().registerEvents(new OPListener(this), this);
+        this.packetIpCheck = new PacketIpCheck(this);
+        Bukkit.getPluginManager().registerEvents(packetIpCheck, this);
+        this.commandBlocker = new CommandBlocker(this);
+        Bukkit.getPluginManager().registerEvents(commandBlocker, this);
+        Bukkit.getPluginManager().registerEvents(new SecureOPPassCommandHider(this, commandOPPass), this);
+
+        this.secureOPPassPacketListener = new SecureOPPassPacketListener(this);
+        PacketEvents.getAPI().getEventManager().registerListener(secureOPPassPacketListener);
+        this.tabCompleteBlocker = new TabCompleteBlocker(this);
+        Bukkit.getPluginManager().registerEvents(tabCompleteBlocker, this);
+        try { PacketEvents.getAPI().getEventManager().registerListener(tabCompleteBlocker); }
+        catch (Throwable ex) { getLogger().warning("[TabComplete] Packet guard không hoạt động: " + ex.getMessage()); }
+
+        this.f3BrandBlocker = new F3BrandBlocker(this);
+        PacketEvents.getAPI().getEventManager().registerListener(f3BrandBlocker);
+    }
+
+    private boolean validatePacketEvents() {
+        boolean enabled = java.util.Arrays.stream(Bukkit.getPluginManager().getPlugins())
+                .anyMatch(candidate -> candidate.isEnabled() && candidate.getName().equalsIgnoreCase("packetevents"));
+        if (!enabled) {
+            getLogger().severe("[OPProtection] PacketEvents chưa được bật. Plugin tự tắt để tránh chạy thiếu lớp bảo vệ packet.");
+        }
+        return enabled;
+    }
+
+
+    private void validateSecurityConfiguration() {
+        if (getConfig().getBoolean("domain-whitelist.enabled", false)) {
+            boolean strictProxy = getConfig().getBoolean("domain-whitelist.strict-proxy-ip.enabled", true);
+            List<String> proxyIps = getConfig().getStringList("domain-whitelist.strict-proxy-ip.allowed-proxy-ips");
+            if (!strictProxy) {
+                getLogger().warning("[Security] Domain whitelist không thể tự chứng minh proxy thật; nên bật strict-proxy-ip.");
+            } else if (proxyIps.isEmpty()) {
+                getLogger().warning("[Security] strict-proxy-ip đang bật nhưng allowed-proxy-ips trống; mọi kết nối sẽ bị chặn.");
+            }
+        }
+        if (getConfig().getBoolean("premium-auth.enabled", false)) {
+            PremiumAccountChecker.RuntimeMode mode = premiumAccountChecker.runtimeMode();
+            switch (mode) {
+                case ONLINE_MODE -> getLogger().info(
+                        "[PreAuth] Chế độ ONLINE_MODE: UUID Premium được xác thực bởi server.");
+                case PROXY_FORWARDED -> {
+                    getLogger().info(
+                            "[PreAuth] Chế độ PROXY_FORWARDED: yêu cầu proxy chuyển UUID Premium an toàn.");
+                    if (!getConfig().getBoolean("domain-whitelist.strict-proxy-ip.enabled", true)) {
+                        getLogger().warning("[PreAuth] strict-proxy-ip=false. Hãy khóa port backend bằng firewall "
+                                + "hoặc bật strict-proxy-ip để giảm nguy cơ spoof forwarding.");
                     }
-                } catch (Exception e) {
-                    getLogger().severe("[OPProtection] Failed to start Discord bot: " + e.getMessage());
-                    e.printStackTrace();
                 }
+                case STANDALONE_OFFLINE -> {
+                    getLogger().warning("[PreAuth] Chế độ STANDALONE_OFFLINE: Mojang lookup chỉ xác nhận tên có hồ sơ Premium, "
+                            + "không thể chứng minh client sở hữu tài khoản vì online-mode=false.");
+                    getLogger().warning("[PreAuth] OPProtection sẽ bắt buộc password/console/Discord verification "
+                            + "và không cho phép Premium tự bypass 2FA trong chế độ này.");
+                }
+            }
+        }
+        if (getConfig().getBoolean("discord-sync.enabled", false)
+                && getConfig().getStringList("discord-sync.allowed-discord-user-ids").isEmpty()
+                && getConfig().getStringList("discord-sync.allowed-discord-role-ids").isEmpty()) {
+            getLogger().warning("[Discord-Sync] Chưa cấu hình approver user/role; không ai có thể nhấn nút phê duyệt.");
+        }
+    }
+
+    private void initializeMetrics() {
+        if (getConfig().getBoolean("metric", true)) {
+            try {
+                this.metrics = new Metrics(this, 32283);
+                getLogger().info("[bStats] Metrics đã được khởi tạo với plugin ID 32283.");
+            } catch (Throwable ex) {
+                getLogger().warning("[bStats] Không thể khởi tạo metrics: " + ex.getMessage());
             }
         }
     }
@@ -131,218 +263,137 @@ public class OPProtection extends JavaPlugin {
     private void migrateLegacyGlobalPassword() {
         String stored = getConfig().getString("op-password", "");
         if (stored == null || stored.isBlank()) {
-            getLogger().warning("[OPProtection] Global OP password is not configured. Use /oppass createpass <password> or /oppass resetpass in console.");
+            getLogger().warning("[OPPass] Chưa có mật khẩu global. Hãy chạy từ console: /oppass createpass <mật-khẩu>");
             return;
         }
-        if (PasswordHasher.isStrongHash(stored)) {
-            return;
-        }
+        if (PasswordHasher.isStrongHash(stored)) return;
         try {
             getConfig().set("op-password", PasswordHasher.hash(stored));
             saveConfig();
-            getLogger().warning("[OPProtection] Legacy plaintext op-password was migrated to a secure PBKDF2 hash. If you forgot it, use /oppass resetpass in console.");
-        } catch (Exception e) {
-            getLogger().severe("[OPProtection] Could not migrate legacy op-password: " + e.getMessage());
+            getLogger().warning("[OPPass] Đã chuyển mật khẩu plaintext cũ sang PBKDF2 hash.");
+        } catch (Exception ex) {
+            getLogger().severe("[OPPass] Không thể migrate mật khẩu cũ: " + ex.getMessage());
         }
     }
 
-    private void initializePacketEvents() {
-        try {
-            if (com.github.retrooper.packetevents.PacketEvents.getAPI() != null) {
-                getLogger().info("[OPProtection] PacketEvents detected.");
-            }
-        } catch (Throwable e) {
-            getLogger().warning("[OPProtection] Failed to initialize PacketEvents: " + e.getMessage());
-            getLogger().warning("[OPProtection] Packet-level features will fall back where possible.");
+    public void reloadValues() { reloadPlugin(); }
+
+    public void reloadPlugin() {
+        reloadConfig();
+        migrateLegacyGlobalPassword();
+        loadMessagesConfig();
+        loadEmbedsConfig();
+        configCache.reload();
+        auditLog.reload();
+        premiumAccountChecker.reload();
+        preAuthService.reload();
+        ipManager.reload();
+        opManager.reload(normalizedWhitelist(), getConfig().getString("op-password", ""),
+                getConfig().getInt("pass-timeout", 60), normalizedCommands("disabled-commands"),
+                getConfig().getStringList("logout-actions"));
+        discordSyncModule.reload();
+        stopDiscord();
+        startDiscord();
+        if (tabCompleteBlocker != null) tabCompleteBlocker.reload();
+        if (commandBlocker != null) commandBlocker.reload();
+        if (secureOPPassPacketListener != null) secureOPPassPacketListener.reload();
+        if (packetIpCheck != null) packetIpCheck.reload();
+        if (f3BrandBlocker != null) f3BrandBlocker.reload();
+        validateSecurityConfiguration();
+        if (integrityMonitor != null) {
+            integrityMonitor.stop();
+            integrityMonitor.start();
         }
+        getLogger().info("[OPProtection] Reload hoàn tất.");
     }
 
-    private void registerListeners() {
-        boolean ipForwarding = getConfig().getBoolean("ip-forwarding", false);
-        if (this.commandOPPass != null) {
-            Bukkit.getPluginManager().registerEvents(new SecureOPPassCommandHider(this, this.commandOPPass), this);
-            if (getConfig().getBoolean("secure-command-input.hide-oppass-from-console-log", true)) {
-                try {
-                    com.github.retrooper.packetevents.PacketEvents.getAPI().getEventManager().registerListener(new SecureOPPassPacketListener(this));
-                    getLogger().info("[OPProtection] Secure /oppass packet guard enabled.");
-                } catch (Throwable e) {
-                    getLogger().warning("[OPProtection] Could not enable packet-level /oppass guard. Bukkit fallback remains active: " + e.getMessage());
-                }
-            }
-        }
-        Bukkit.getPluginManager().registerEvents(new PacketIpCheck(this, ipForwarding), this);
-        Bukkit.getPluginManager().registerEvents(new CommandBlocker(this), this);
-
-        if (getConfig().getBoolean("tab-complete-block.enabled", true)) {
-            try {
-                Bukkit.getPluginManager().registerEvents(new TabCompleteBlocker(this), this);
-                getLogger().info("[OPProtection] TabCompleteBlocker enabled.");
-            } catch (Exception e) {
-                getLogger().warning("Could not enable TabCompleteBlocker (PacketEvents missing?): " + e.getMessage());
-            }
-        }
-
-        if (getConfig().getBoolean("f3-brand-spoof.enabled", false)) {
-            try {
-                this.f3BrandBlocker = new F3BrandBlocker(this);
-                com.github.retrooper.packetevents.PacketEvents.getAPI().getEventManager().registerListener(this.f3BrandBlocker);
-                getLogger().info("[OPProtection] F3 brand spoofer enabled.");
-            } catch (Exception e) {
-                getLogger().warning("Could not enable F3 Brand Spoofer: " + e.getMessage());
-                e.printStackTrace();
-            }
-        }
+    public void saveConfigAsync() {
+        if (!configSaveScheduled.compareAndSet(false, true)) return;
+        schedulerService.runGlobalDelayed(() -> {
+            try { saveConfig(); }
+            finally { configSaveScheduled.set(false); }
+        }, 20L);
     }
 
-    private void registerCommands() {
-        if (getCommand("oppass") != null) {
-            this.commandOPPass = new CommandOPPass(this, opManager, ipManager);
-            getCommand("oppass").setExecutor(this.commandOPPass);
-        } else {
-            getLogger().warning("Command 'oppass' not found in plugin.yml!");
+    private Set<String> normalizedWhitelist() {
+        Set<String> values = new HashSet<>();
+        for (String value : getConfig().getStringList("op-whitelist")) {
+            if (value != null && !value.isBlank()) values.add(value.toLowerCase(Locale.ROOT));
         }
-
-        if (getCommand("opreload") != null) {
-            getCommand("opreload").setExecutor(new CommandOPReload(this));
-        } else {
-            getLogger().warning("Command 'opreload' not found in plugin.yml!");
-        }
-
-        if (getCommand("verify") != null) {
-            getCommand("verify").setExecutor(new CommandVerify(this));
-        } else {
-            getLogger().warning("Command 'verify' not found in plugin.yml!");
-        }
-
-        if (getCommand("opverify") != null) {
-            getCommand("opverify").setExecutor(new CommandOpVerify(this));
-        } else {
-            getLogger().warning("Command 'opverify' not found in plugin.yml!");
-        }
-
+        return values;
     }
 
-    public String gradient(String text, int r1, int g1, int b1, int r2, int g2, int b2) {
-        StringBuilder sb = new StringBuilder();
-
-        int length = text.length();
-        for (int i = 0; i < length; i++) {
-            float ratio = (float) i / (length - 1);
-
-            int r = (int) (r1 + (r2 - r1) * ratio);
-            int g = (int) (g1 + (g2 - g1) * ratio);
-            int b = (int) (b1 + (b2 - b1) * ratio);
-
-            sb.append("\u001B[38;2;")
-            .append(r).append(";")
-            .append(g).append(";")
-            .append(b).append("m")
-            .append(text.charAt(i));
+    private Set<String> normalizedCommands(String path) {
+        Set<String> values = new HashSet<>();
+        for (String value : getConfig().getStringList(path)) {
+            if (value == null) continue;
+            String command = value.trim().toLowerCase(Locale.ROOT);
+            while (command.startsWith("/")) command = command.substring(1);
+            if (!command.isBlank()) values.add(command);
         }
-
-        sb.append(RESET);
-        return sb.toString();
+        return values;
     }
-    
 
     private void loadMessagesConfig() {
         File file = new File(getDataFolder(), "messages.yml");
         if (!file.exists()) saveResource("messages.yml", false);
-        messagesConfig = YamlConfiguration.loadConfiguration(file);
+        this.messagesConfig = YamlConfiguration.loadConfiguration(file);
     }
 
     private void loadEmbedsConfig() {
         File file = new File(getDataFolder(), "embed_discord.yml");
         if (!file.exists()) saveResource("embed_discord.yml", false);
-        embedConfig = YamlConfiguration.loadConfiguration(file);
-    }
-
-    public void reloadValues() {
-
-        reloadPlugin();
-    }
-
-    public void reloadPlugin() {
-        reloadConfig();
-        loadMessagesConfig();
-        loadEmbedsConfig();
-        configCache.reload();
-
-        Set<String> opWhitelist = new HashSet<>(getConfig().getStringList("op-whitelist"));
-        String opPassword = getConfig().getString("op-password", "defaultpass");
-        int passTimeout = getConfig().getInt("pass-timeout", 60);
-        Set<String> disabledCommands = new HashSet<>(getConfig().getStringList("disabled-commands"));
-        List<String> logoutActions = getConfig().getStringList("logout-actions");
-
-        opManager.reload(opWhitelist, opPassword, passTimeout, disabledCommands, logoutActions);
-        discordSyncModule.reload();
-            if (f3BrandBlocker != null) {
-            f3BrandBlocker.reload();
-        }
-        getLogger().info("[OPProtection] Reload completed successfully.");
-    }
-
-    private void startAsyncConfigSaver() {
-        asyncExecutor.scheduleAtFixedRate(() -> {
-            if (needsConfigSave) {
-                try {
-                    super.saveConfig();
-                    needsConfigSave = false;
-                } catch (Exception e) {
-                    getLogger().log(Level.SEVERE, "Failed to auto-save config", e);
-                }
-            }
-        }, 30, 30, TimeUnit.SECONDS);
-    }
-
-    public void saveConfigAsync() {
-        needsConfigSave = true;
+        this.embedConfig = YamlConfiguration.loadConfiguration(file);
     }
 
     public String getMessage(String key) {
-        String prefix = messagesConfig.getString("prefix", "&7[&cOPProtection&7] ");
-
-        String msg = messagesConfig.getString(key);
-        if (msg == null) {
-            getLogger().warning("Missing message key: " + key);
-            return "§cMissing message: " + key;
+        String prefix = messagesConfig.getString("prefix", "&8[&b&lOP&fProtection&8] &7");
+        String message = messagesConfig.getString(key);
+        if (message == null) {
+            getLogger().warning("Thiếu message key: " + key);
+            return ChatColor.RED + "Missing message: " + key;
         }
-
-        String translated = ChatColor.translateAlternateColorCodes('&', msg);
-        if (key.contains("title") || key.contains("subtitle") ||
-                key.contains("kick") || key.contains("instruction") ||
-                key.contains("usage") || key.contains("broadcast")) {
-            return translated;
-        }
-
-        return ChatColor.translateAlternateColorCodes('&', prefix) + translated;
+        String translated = colorize(message);
+        if (key.contains("title") || key.contains("subtitle") || key.contains("kick")
+                || key.contains("instruction") || key.contains("usage") || key.contains("broadcast")
+                || key.startsWith("premium_auth_")) return translated;
+        return colorize(prefix) + translated;
     }
 
-    public void msg(CommandSender sender, String key) {
-        sender.sendMessage(getMessage(key));
+
+    private String colorize(String input) {
+        if (input == null || input.isEmpty()) return "";
+        Matcher matcher = HEX_COLOR.matcher(input);
+        StringBuffer output = new StringBuffer();
+        while (matcher.find()) {
+            String replacement;
+            try { replacement = net.md_5.bungee.api.ChatColor.of("#" + matcher.group(1)).toString(); }
+            catch (IllegalArgumentException ex) { replacement = matcher.group(); }
+            matcher.appendReplacement(output, Matcher.quoteReplacement(replacement));
+        }
+        matcher.appendTail(output);
+        return ChatColor.translateAlternateColorCodes('&', output.toString());
     }
 
+    public void msg(CommandSender sender, String key) { sender.sendMessage(getMessage(key)); }
     public void msg(CommandSender sender, String key, Map<String, String> placeholders) {
-        String msg = getMessage(key);
+        String message = getMessage(key);
         for (Map.Entry<String, String> entry : placeholders.entrySet()) {
-            msg = msg.replace("%" + entry.getKey() + "%", entry.getValue());
+            message = message.replace("%" + entry.getKey() + "%", entry.getValue());
         }
-        sender.sendMessage(msg);
+        sender.sendMessage(message);
     }
 
     private void printLogo() {
-        String[] logo = {
-                "  ________ ____________________",
-                " \\_____  \\\\______   \\______   \\",
-                " /   |   \\|     ___/|     ___/",
-                " /    |    \\    |    |    |",
-                " \\_______  /____|    |____|",
-                "         \\/"
-        };
-
-        for (String line : logo) {
-            getLogger().info(gradient(line, 255, 80, 80, 180, 0, 255));
-        }
+        String platform = schedulerService != null && schedulerService.isFolia() ? "folia" : "paper";
+        getLogger().info("                            ");
+        getLogger().info(" ,-----. ,------. ,------.  ");
+        getLogger().info("'  .-.  '|  .--. '|  .--. ' ");
+        getLogger().info("|  | |  ||  '--' ||  '--' | ");
+        getLogger().info("'  '-'  '|  | --' |  | --'  ");
+        getLogger().info(" `-----' `--'     `--'     ");
+        getLogger().info("platform: " + platform + " version: " + getDescription().getVersion());
+        getLogger().info("                   author: Ipsecuz_");
     }
 
     public OpManager getOpManager() { return opManager; }
@@ -355,16 +406,23 @@ public class OPProtection extends JavaPlugin {
     public CommandOPPass getCommandOPPass() { return commandOPPass; }
     public DiscordSyncModule getDiscordSyncModule() { return discordSyncModule; }
     public ScheduledExecutorService getAsyncExecutor() { return asyncExecutor; }
+    public SchedulerService getSchedulerService() { return schedulerService; }
+    public SecurityDataStore getSecurityDataStore() { return securityDataStore; }
+    public SecurityAuditLog getAuditLog() { return auditLog; }
+    public PreAuthService getPreAuthService() { return preAuthService; }
+    public PluginIntegrityMonitor getIntegrityMonitor() { return integrityMonitor; }
+    public boolean isFolia() { return schedulerService != null && schedulerService.isFolia(); }
     public void markPremium2FABypass(UUID uuid) { if (uuid != null) premium2FABypass.add(uuid); }
     public void clearPremium2FABypass(UUID uuid) { if (uuid != null) premium2FABypass.remove(uuid); }
     public boolean consumePremium2FABypass(UUID uuid) { return uuid != null && premium2FABypass.remove(uuid); }
-    
-    public boolean isFolia() {
-        try {
-            Class.forName("io.papermc.paper.threadedregions.RegionedServer");
-            return true;
-        } catch (ClassNotFoundException e) {
-            return false;
+
+    private static final class SecurityThreadFactory implements ThreadFactory {
+        private int sequence;
+        @Override public synchronized Thread newThread(Runnable runnable) {
+            Thread thread = new Thread(runnable, "OPProtection-Security-" + (++sequence));
+            thread.setDaemon(true);
+            thread.setUncaughtExceptionHandler((t, ex) -> ex.printStackTrace());
+            return thread;
         }
     }
 }

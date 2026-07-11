@@ -5,21 +5,26 @@ import com.github.retrooper.packetevents.event.PacketReceiveEvent;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.util.Locale;
-import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.ipsecuz.opprotection.OPProtection;
 import org.ipsecuz.opprotection.command.CommandOPPass;
 
 public final class SecureOPPassPacketListener extends PacketListenerAbstract {
     private final OPProtection plugin;
+    private volatile boolean enabled;
 
     public SecureOPPassPacketListener(OPProtection plugin) {
         this.plugin = plugin;
+        reload();
+    }
+
+    public void reload() {
+        this.enabled = plugin.getConfig().getBoolean("secure-command-input.hide-oppass-from-console-log", true);
     }
 
     @Override
     public void onPacketReceive(PacketReceiveEvent event) {
-        if (!this.plugin.getConfig().getBoolean("secure-command-input.hide-oppass-from-console-log", true)) {
+        if (!this.enabled) {
             return;
         }
 
@@ -50,11 +55,7 @@ public final class SecureOPPassPacketListener extends PacketListenerAbstract {
             command.handlePlayerCommandLine(player, commandLine);
         };
 
-        if (this.plugin.getOpManager() != null && this.plugin.getOpManager().isFolia()) {
-            player.getScheduler().run(this.plugin, task -> action.run(), null);
-        } else {
-            Bukkit.getScheduler().runTask(this.plugin, action);
-        }
+        this.plugin.getSchedulerService().runEntity(player, action);
     }
 
     private String readCommandLine(PacketReceiveEvent event) {

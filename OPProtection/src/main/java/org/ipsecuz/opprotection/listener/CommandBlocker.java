@@ -1,111 +1,62 @@
 package org.ipsecuz.opprotection.listener;
 
-import java.util.List;
-import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 import org.bukkit.event.server.ServerCommandEvent;
-import org.bukkit.plugin.Plugin;
 import org.ipsecuz.opprotection.OPProtection;
+import org.ipsecuz.opprotection.managers.OpManager;
 
-public class CommandBlocker implements Listener {
+import java.util.HashSet;
+import java.util.Locale;
+import java.util.Set;
+
+/** Extra policy layer for Discord-Sync and optional console command deny-list. */
+public final class CommandBlocker implements Listener {
     private final OPProtection plugin;
-    private final boolean isFolia;
+    private volatile boolean consoleBlockingEnabled;
+    private volatile Set<String> consoleBlockedCommands = Set.of();
 
     public CommandBlocker(OPProtection plugin) {
         this.plugin = plugin;
-        this.isFolia = this.initializeFolia();
+        reload();
     }
 
-    private boolean initializeFolia() {
-        try {
-            Class.forName("io.papermc.paper.threadedregions.RegionedServer");
-            return true;
-        } catch (ClassNotFoundException e) {
-            return false;
+    public void reload() {
+        this.consoleBlockingEnabled = plugin.getConfig().getBoolean("console-blocked-cmd.enabled", false);
+        Set<String> commands = new HashSet<>();
+        for (String blocked : plugin.getConfig().getStringList("console-blocked-cmd.commands")) {
+            if (blocked == null) continue;
+            String normalized = blocked.toLowerCase(Locale.ROOT).replaceFirst("^/+", "").trim();
+            if (!normalized.isEmpty()) commands.add(normalized);
         }
+        this.consoleBlockedCommands = Set.copyOf(commands);
     }
 
-    @EventHandler(priority = EventPriority.LOWEST)
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onPlayerCommand(PlayerCommandPreprocessEvent event) {
-        String msg = event.getMessage();
+        String command = OpManager.extractBaseCmd(event.getMessage());
+        if (command.equals("oppass") || command.equals("verify") || command.equals("opverify")) return;
 
-        String checkCmd = msg.toLowerCase();
-        if (checkCmd.startsWith("/")) {
-            checkCmd = checkCmd.substring(1);
+        if (plugin.getOpManager().isPrivileged(event.getPlayer())
+                && plugin.getDiscordSyncModule().commandRequiresSync(command)
+                && !plugin.getDiscordSyncModule().isPlayerVerified(event.getPlayer())) {
+            event.setCancelled(true);
+            plugin.getDiscordSyncModule().handleUnauthorizedCommand(event.getPlayer(), command);
         }
-        if (checkCmd.startsWith("oppass")) {
-            return;
-        }
+    }
 
-        if (event.getPlayer().isOp() && this.plugin.getDiscordSyncModule().commandRequiresSync(checkCmd)) {
-            if (!this.plugin.getDiscordSyncModule().isPlayerVerified(event.getPlayer())) {
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onServerCommand(ServerCommandEvent event) {
+        if (!consoleBlockingEnabled) return;
+        String command = OpManager.extractBaseCmd(event.getCommand());
+        for (String normalized : consoleBlockedCommands) {
+            if (command.equals(normalized) || command.endsWith(":" + normalized)) {
                 event.setCancelled(true);
-                this.plugin.getDiscordSyncModule().handleUnauthorizedCommand(event.getPlayer(), checkCmd);
+                event.getSender().sendMessage(plugin.getMessage("command_blocked"));
                 return;
             }
         }
-
-        if (this.isCommandBlocked(msg, "disabled-commands")) {
-            event.setCancelled(true);
-
-            if (this.isFolia) {
-                event.getPlayer().getScheduler().run((Plugin) this.plugin, task ->
-                        event.getPlayer().sendMessage(this.plugin.getMessage("command_blocked")), null);
-            } else {
-                event.getPlayer().sendMessage(this.plugin.getMessage("command_blocked"));
-            }
-        }
-    }
-
-    @EventHandler(priority = EventPriority.LOWEST)
-    public void onServerCommand(ServerCommandEvent event) {
-        if (!this.plugin.getConfig().getBoolean("console-blocked-cmd.enabled", false)) {
-            return;
-        }
-
-        String command = event.getCommand();
-
-        if (this.isCommandBlocked(command, "console-blocked-cmd.commands")) {
-            event.setCancelled(true);
-            event.getSender().sendMessage(this.plugin.getMessage("command_blocked"));
-        }
-    }
-
-
-    private boolean isCommandBlocked(String command, String configPath) {
-        if (command == null || command.isEmpty()) {
-            return false;
-        }
-
-        String lowerCommand = command.toLowerCase();
-        if (lowerCommand.startsWith("/") && lowerCommand.length() > 1) {
-            lowerCommand = lowerCommand.substring(1);
-        } else if (lowerCommand.equals("/")) {
-            return false;
-        }
-
-        int colonIndex = lowerCommand.indexOf(58);
-        if (colonIndex > 0) {
-            if (colonIndex + 1 < lowerCommand.length()) {
-                lowerCommand = lowerCommand.substring(colonIndex + 1);
-            } else {
-                return false;
-            }
-        }
-
-        String commandName = lowerCommand.split("\\s+")[0];
-
-        List<String> blockedCommands = this.plugin.getConfig().getStringList(configPath);
-
-        for (String blocked : blockedCommands) {
-            String blockedLower = blocked.toLowerCase();
-            if (commandName.equals(blockedLower)) {
-                return true;
-            }
-        }
-        return false;
     }
 }

@@ -3,121 +3,42 @@ package org.ipsecuz.opprotection.discord;
 import discord4j.common.util.Snowflake;
 import discord4j.core.GatewayDiscordClient;
 import discord4j.core.event.domain.interaction.ButtonInteractionEvent;
-import discord4j.core.object.entity.User;
-import org.bukkit.Bukkit;
-import org.bukkit.entity.Player;
 import org.ipsecuz.opprotection.OPProtection;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
+import java.util.HashSet;
+import java.util.Set;
 
-public class DiscordEventListener {
+public final class DiscordEventListener {
     private final OPProtection plugin;
-    private final GatewayDiscordClient client;
-    private final Map<Long, String> pendingVerifications = new HashMap<>(); // Discord User ID -> Player Name
+    private final reactor.core.Disposable subscription;
 
     public DiscordEventListener(OPProtection plugin, GatewayDiscordClient client) {
         this.plugin = plugin;
-        this.client = client;
-        this.registerListeners();
+        this.subscription = client.on(ButtonInteractionEvent.class).subscribe(this::handle,
+                error -> plugin.getLogger().severe("[Discord] Button event error: " + error.getMessage()));
     }
 
-    private void registerListeners() {
-        if (this.client == null) {
-            plugin.getLogger().warning("Discord client is null, cannot register listeners");
-            return;
-        }
+    private void handle(ButtonInteractionEvent event) {
+        String customId = event.getCustomId();
+        if (!customId.startsWith("opprotect:verify:")) return;
+        String requestId = customId.substring("opprotect:verify:".length());
+        long userId = event.getInteraction().getUser().getId().asLong();
+        Set<Long> roleIds = new HashSet<>();
+        event.getInteraction().getMember().ifPresent(member -> {
+            for (Snowflake role : member.getRoleIds()) roleIds.add(role.asLong());
+        });
 
-        try {
-            this.client.on(ButtonInteractionEvent.class)
-                    .subscribe(
-                            event -> handleButtonInteraction(event),
-                            error -> plugin.getLogger().severe("Discord button event error: " + error.getMessage())
-                    );
-
-            plugin.getLogger().info("§aDiscord event listener registered successfully");
-        } catch (Exception e) {
-            plugin.getLogger().severe("Failed to register Discord event listener: " + e.getMessage());
-        }
-    }
-
-    private void handleButtonInteraction(ButtonInteractionEvent event) {
-        try {
-            String customId = event.getCustomId();
-            User user = event.getInteraction().getUser();
-
-            plugin.getLogger().info("Button clicked: " + customId + " by Discord user: " + user.getUsername());
-
-            if (customId.startsWith("verify_")) {
-                String playerName = customId.substring("verify_".length());
-                plugin.getServer().getGlobalRegionScheduler().run(plugin, task -> {
-                    verifyPlayer(event, playerName, user);
-                });
-            }
-            else if (customId.startsWith("cancel_")) {
-                String playerName = customId.substring("cancel_".length());
-                event.reply("§cHủy xác minh cho " + playerName).withEphemeral(true).block();
-            }
-        } catch (Exception e) {
-            plugin.getLogger().warning("Error handling button interaction: " + e.getMessage());
-            e.printStackTrace();
-        }
-    }
-
-    private void verifyPlayer(ButtonInteractionEvent event, String playerName, User discordUser) {
-        Player player = Bukkit.getPlayerExact(playerName);
-
-        if (player == null) {
-            event.reply("❌ Người chơi " + playerName + " không online!").withEphemeral(true).block();
-            plugin.getLogger().warning("Verification failed: Player " + playerName + " not found");
-            return;
-        }
-
-        try {
-            plugin.getDiscordSyncModule().verifyPlayer(player);
-            
-            long timeoutMinutes = plugin.getDiscordSyncModule().getVerificationTimeoutSeconds() / 60;
-
-            event.reply("✅ **Xác minh thành công!**\n" +
-                    "Người chơi: `" + playerName + "`\n" +
-                    "Discord: " + discordUser.getMention() + "\n" +
-                    "Thời hạn: " + timeoutMinutes + " phút")
-                    .withEphemeral(true).block();
-            
-            Bukkit.getScheduler().runTask(plugin, () -> {
-                if (!player.isOnline()) return;
-                player.sendMessage("§a✓ Xác minh Discord thành công!");
-                player.sendMessage("§eBạn có thể sử dụng các lệnh bảo mật trong " + timeoutMinutes + " phút");
-            });
-            
-            if (plugin.isDiscordEnabled()) {
-                try {
-                    plugin.getDiscord().sendEmbed("discord-sync-verified", Map.of(
-                        "player", playerName,
-                        "discordUser", discordUser.getUsername(),
-                        "timeout", String.valueOf(timeoutMinutes)
-                    ), false);
-                } catch (Exception e) {
-                    plugin.getLogger().warning("Could not send Discord verification embed: " + e.getMessage());
-                }
-            }
-
-            plugin.getLogger().info("§aPlayer " + playerName + " verified successfully by " + discordUser.getUsername());
-
-        } catch (Exception e) {
-            event.reply("❌ Lỗi xác minh: " + e.getMessage()).withEphemeral(true).block();
-            plugin.getLogger().severe("Verification error for " + playerName + ": " + e.getMessage());
-        }
+        plugin.getDiscordSyncModule().verifyFromDiscordAsync(requestId, userId, Set.copyOf(roleIds), result -> {
+            String response = result.success()
+                    ? "✅ Đã xác minh Discord-Sync cho `" + result.playerName() + "`."
+                    : "❌ Không thể xác minh: " + result.message();
+            event.reply(response).withEphemeral(true).subscribe(
+                    ignored -> { },
+                    error -> plugin.getLogger().warning("[Discord] Không thể reply button: " + error.getMessage()));
+        });
     }
 
     public void shutdown() {
-        if (this.client != null) {
-            try {
-                plugin.getLogger().info("Discord event listener shutdown");
-            } catch (Exception e) {
-                plugin.getLogger().warning("Error shutting down Discord listener: " + e.getMessage());
-            }
-        }
+        if (subscription != null && !subscription.isDisposed()) subscription.dispose();
     }
 }

@@ -1,15 +1,16 @@
 package org.ipsecuz.opprotection.command;
 
-import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
+import org.bukkit.command.ConsoleCommandSender;
 import org.bukkit.entity.Player;
 import org.ipsecuz.opprotection.OPProtection;
+import org.ipsecuz.opprotection.managers.DiscordSyncModule;
 
+import java.util.Map;
 
-public class CommandOpVerify implements CommandExecutor {
+public final class CommandOpVerify implements CommandExecutor {
     private final OPProtection plugin;
 
     public CommandOpVerify(OPProtection plugin) {
@@ -17,103 +18,54 @@ public class CommandOpVerify implements CommandExecutor {
     }
 
     @Override
-    public boolean onCommand(CommandSender sender, Command cmd, String label, String[] args) {
-        if (!(sender instanceof Player) && !(sender instanceof org.bukkit.command.ConsoleCommandSender)) {
-            sender.sendMessage("§cChỉ OP hoặc Console mới có thể sử dụng lệnh này!");
-            return true;
-        }
-
-        if (!(sender instanceof Player)) {
-            if (args.length < 2) {
-                sender.sendMessage("§cUsage: /opverify <player-name> <code>");
-                return true;
-            }
-            
-            String playerName = args[0];
-            String code = args[1];
-            Player targetPlayer = Bukkit.getPlayer(playerName);
-            
-            if (targetPlayer == null) {
-                sender.sendMessage("§cPlayer " + playerName + " not found!");
-                return true;
-            }
-            
-            if (!plugin.isDiscordEnabled()) {
-                sender.sendMessage("§cDiscord system is not enabled!");
-                return true;
-            }
-            
-            verifyPlayerWithCode(targetPlayer, code, sender);
-            return true;
-        }
-
-        Player player = (Player) sender;
-        
-        if (!player.isOp()) {
-            player.sendMessage("§cBạn không có quyền OP để sử dụng lệnh này!");
-            return true;
-        }
-
-        if (args.length < 1) {
-            player.sendMessage("§cUsage: /opverify <verification-code>");
-            player.sendMessage("§eExample: /opverify 1234");
-            return true;
-        }
-
-        String code = args[0];
-        
-        if (!plugin.isDiscordEnabled()) {
-            player.sendMessage("§cHệ thống Discord chưa được bật!");
-            return true;
-        }
-
+    public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (!plugin.getDiscordSyncModule().isEnabled()) {
-            player.sendMessage("§cMôđun Discord-Sync chưa được bật!");
+            send(sender, "§c[OPProtection] Discord-Sync chưa được bật.");
+            return true;
+        }
+        if (args.length != 2) {
+            send(sender, "§eCách dùng: §f/opverify <player> <mã-một-lần>");
+            return true;
+        }
+        if (sender instanceof Player player) {
+            if (!plugin.getOpManager().isPrivileged(player) || !plugin.getOpManager().isConfirmed(player)) {
+                send(sender, plugin.getMessage("no_permission"));
+                return true;
+            }
+            if (player.getName().equalsIgnoreCase(args[0])) {
+                send(sender, "§c[OPProtection] Không thể tự phê duyệt yêu cầu Discord-Sync của chính mình.");
+                return true;
+            }
+        } else if (!(sender instanceof ConsoleCommandSender)) {
+            send(sender, plugin.getMessage("no_permission"));
             return true;
         }
 
-        verifyPlayerWithCode(player, code, player);
+        String targetName = args[0];
+        String code = args[1];
+        String issuer = sender instanceof Player player ? player.getName() : "CONSOLE";
+        plugin.getDiscordSyncModule().verifyCodeAsync(targetName, code, issuer, result -> {
+            if (!result.success()) {
+                send(sender, "§c[OPProtection] Xác minh thất bại: " + result.message());
+                return;
+            }
+            String verifiedName = result.playerName() == null ? targetName : result.playerName();
+            send(sender, "§a[OPProtection] Đã xác minh Discord-Sync cho §f" + verifiedName + "§a.");
+            if (plugin.isDiscordEnabled()) {
+                plugin.getDiscord().sendEmbed("discord-sync-verified", Map.of(
+                        "player", verifiedName,
+                        "discordUser", issuer,
+                        "timeout", String.valueOf(plugin.getDiscordSyncModule().getVerificationTimeoutSeconds() / 60L)), false);
+            }
+        });
         return true;
     }
 
-    private void verifyPlayerWithCode(Player player, String code, CommandSender issuer) {
-        try {
-            String expectedCode = String.format("%04d", (player.getUniqueId().hashCode() & 0xFFFF) % 10000);
-            
-            if (!code.equals(expectedCode)) {
-                issuer.sendMessage("§c✗ Mã xác minh không chính xác!");
-                issuer.sendMessage("§eExpected: " + expectedCode + ", Got: " + code);
-                return;
-            }
-
-            plugin.getDiscordSyncModule().verifyPlayer(player);
-
-            issuer.sendMessage("§a✓ Xác minh thành công cho player: " + player.getName());
-            
-            player.sendMessage("§a✓ Bạn đã được xác minh bởi " + (issuer instanceof Player ? ((Player)issuer).getName() : "Console"));
-            player.sendMessage("§eBạn có thể sử dụng các lệnh bảo mật trong " + 
-                    (plugin.getDiscordSyncModule().getVerificationTimeoutSeconds() / 60) + " phút");
-
-            if (plugin.isDiscordEnabled()) {
-                try {
-                    plugin.getDiscord().sendSimpleMessage(
-                        "✅ **XÁC MINH THÀNH CÔNG**\n" +
-                        "Player: `" + player.getName() + "`\n" +
-                        "Verified by: `" + (issuer instanceof Player ? ((Player)issuer).getName() : "Console") + "`\n" +
-                        "Code: `" + code + "`"
-                    );
-                } catch (Exception e) {
-                    plugin.getLogger().warning("Could not send Discord confirmation: " + e.getMessage());
-                }
-            }
-
-            plugin.getLogger().info("§a[OpVerify] Player " + player.getName() + " verified by " + 
-                    (issuer instanceof Player ? ((Player)issuer).getName() : "Console"));
-
-        } catch (Exception e) {
-            issuer.sendMessage("§cLỗi xác minh: " + e.getMessage());
-            plugin.getLogger().severe("Verification error: " + e.getMessage());
-            e.printStackTrace();
+    private void send(CommandSender sender, String message) {
+        if (sender instanceof Player player) {
+            plugin.getSchedulerService().runEntity(player, () -> player.sendMessage(message));
+        } else {
+            plugin.getSchedulerService().runGlobal(() -> sender.sendMessage(message));
         }
     }
 }

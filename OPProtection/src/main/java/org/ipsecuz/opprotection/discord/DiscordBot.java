@@ -3,242 +3,145 @@ package org.ipsecuz.opprotection.discord;
 import discord4j.common.util.Snowflake;
 import discord4j.core.DiscordClientBuilder;
 import discord4j.core.GatewayDiscordClient;
-import discord4j.core.object.entity.Message;
+import discord4j.core.object.component.ActionRow;
+import discord4j.core.object.component.Button;
 import discord4j.core.object.entity.channel.MessageChannel;
 import discord4j.core.spec.EmbedCreateSpec;
 import discord4j.core.spec.MessageCreateSpec;
 import discord4j.core.spec.MessageEditSpec;
 import discord4j.rest.util.Color;
+import org.bukkit.configuration.ConfigurationSection;
+import org.ipsecuz.opprotection.OPProtection;
 import reactor.core.publisher.Mono;
 
+import java.time.Duration;
 import java.time.Instant;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import org.ipsecuz.opprotection.OPProtection;
+import java.util.concurrent.ConcurrentHashMap;
 
-public class DiscordBot {
+public final class DiscordBot {
     private final GatewayDiscordClient client;
     private final String channelId;
     private final OPProtection plugin;
-    private final Map<String, Snowflake> active2faMessages = new HashMap<>();
+    private final Map<String, Snowflake> active2faMessages = new ConcurrentHashMap<>();
 
     public DiscordBot(OPProtection plugin, String token, String channelId) {
         this.plugin = plugin;
         this.channelId = channelId;
-        if (channelId.isEmpty()) {
-            plugin.getLogger().warning("\u26a0 channelId không được cấu hình trong config.yml!");
-        }
-        
-        System.setProperty("org.ipsecuz.opprotection.libs.reactor.netty.http.client.decompress", "false");
-        System.setProperty("org.ipsecuz.opprotection.libs.reactor.netty.ioWorkerCount", "2");
-        System.setProperty("org.ipsecuz.opprotection.libs.reactor.netty.tcp.ssl.handshakeTimeout", "10000");
-        
         try {
-            this.client = DiscordClientBuilder.create(token)
-                    .build()
-                    .login()
-                    .retry(3) 
-                    .block(java.time.Duration.ofSeconds(30));
-                    
-            plugin.getLogger().info("§aDiscord Bot connected successfully");
-        } catch (Exception e) {
-            plugin.getLogger().severe("Không thể khởi tạo Discord Bot: " + e.getMessage());
-            e.printStackTrace();
-            throw new RuntimeException("Discord Bot login failed", e);
+            this.client = DiscordClientBuilder.create(token).build().login()
+                    .timeout(Duration.ofSeconds(30)).block();
+            if (client == null) throw new IllegalStateException("Discord client is null");
+            plugin.getLogger().info("[Discord] Bot đã kết nối thành công.");
+        } catch (Exception ex) {
+            throw new RuntimeException("Discord login failed: " + ex.getMessage(), ex);
         }
     }
 
     public void shutdown() {
-        if (this.client != null) {
-            this.client.logout().block();
+        if (client != null) {
+            try { client.logout().timeout(Duration.ofSeconds(5)).block(); }
+            catch (Exception ex) { plugin.getLogger().warning("[Discord] Logout lỗi: " + ex.getMessage()); }
         }
     }
 
     public void sendEmbed(String type, Map<String, String> placeholders, boolean withButton) {
-        if (this.client == null) return;
-
-        Mono<MessageChannel> channelMono = this.client.getChannelById(Snowflake.of(this.channelId)).cast(MessageChannel.class);
-
-        if (channelMono == null) return;
-
-        Map<String, Object> section = this.plugin.getEmbedConfig().getConfigurationSection(type).getValues(false);
+        if (client == null) return;
+        ConfigurationSection section = plugin.getEmbedConfig().getConfigurationSection(type);
         if (section == null) {
+            plugin.getLogger().warning("[Discord] Thiếu embed section: " + type);
             return;
         }
-
-        String rawTitle = (String)section.getOrDefault("title", "Thông báo");
-        String rawFooter = (String)section.getOrDefault("footer", "OPProtection Bot");
-
         EmbedCreateSpec.Builder embed = EmbedCreateSpec.builder()
-                .title(this.replacePlaceholders(rawTitle, placeholders))
-                .color(Color.of(((Number)section.getOrDefault("color", 65535)).intValue()))
-                .footer(this.replacePlaceholders(rawFooter, placeholders), null)
+                .title(replace(section.getString("title", "OPProtection"), placeholders))
+                .color(Color.of(section.getInt("color", 65535)))
                 .timestamp(Instant.now());
+        String footer = section.getString("footer", "OPProtection Security");
+        if (footer != null && !footer.isBlank()) embed.footer(replace(footer, placeholders), null);
 
-        List<Map<String, Object>> fields = (List)section.get("fields");
-        if (fields != null) {
-            for (Map<String, Object> field : fields) {
-                String name = (String)field.getOrDefault("name", "");
-                String value = (String)field.getOrDefault("value", "");
-                embed.addField(
-                        this.replacePlaceholders(name, placeholders),
-                        this.replacePlaceholders(value, placeholders),
-                        false
-                );
-            }
+        List<Map<?, ?>> fields = section.getMapList("fields");
+        for (Map<?, ?> field : fields) {
+            Object rawName = field.get("name");
+            Object rawValue = field.get("value");
+            Object rawInline = field.get("inline");
+            String name = replace(rawName == null ? "" : String.valueOf(rawName), placeholders);
+            String value = replace(rawValue == null ? "" : String.valueOf(rawValue), placeholders);
+            boolean inline = Boolean.parseBoolean(rawInline == null ? "false" : String.valueOf(rawInline));
+            embed.addField(name, value, inline);
         }
 
-        String player = placeholders.getOrDefault("player", "unknown");
-
-        channelMono.subscribe(
-                channel -> {
-                    if (this.active2faMessages.containsKey(player) && (type.equals("2fa-code") || type.equals("verified"))) {
-                        Snowflake msgId = this.active2faMessages.get(player);
-
-                        MessageEditSpec editSpec = MessageEditSpec.builder()
-                                .contentOrNull(type.equals("verified") ? "✅ Đã xác minh thành công!" : "🔐 Yêu cầu xác minh 2FA cho " + player)
-                                .addEmbed(embed.build())
-                                .build();
-
-                        channel.getMessageById(msgId).flatMap(m -> m.edit(editSpec))
-                                .retry(2)  // Retry 2 times on failure
-                                .timeout(java.time.Duration.ofSeconds(10))  // 10 second timeout
-                                .subscribe(
-                                        success -> {
-                                            if (type.equals("verified")) {
-                                                this.active2faMessages.remove(player);
-                                            }
-                                        },
-                                        error -> {
-                                            if (error.getMessage() != null && (error.getMessage().contains("404") || error.getMessage().contains("10008"))) {
-                                                this.active2faMessages.remove(player);
-                                                this.plugin.getLogger().warning("Tin nhắn cũ không tồn tại cho player " + player + ", sẽ gửi tin nhắn mới.");
-                                                createNewMessage(channel, embed, player, type);
-                                            } else {
-                                                this.plugin.getLogger().warning("Lỗi khi chỉnh sửa tin nhắn Discord: " + error.getMessage());
-                                            }
-                                        }
-                                );
-                        return;
-                    }
-                    createNewMessage(channel, embed, player, type);
-                },
-                error -> {
-                    this.plugin.getLogger().severe("Không thể lấy kênh Discord: " + error.getMessage());
-                }
-        );
+        channel().subscribe(channel -> createOrUpdate(channel, type, placeholders, embed.build(), withButton),
+                error -> plugin.getLogger().severe("[Discord] Không thể truy cập channel: " + error.getMessage()));
     }
 
-    private void createNewMessage(MessageChannel channel, EmbedCreateSpec.Builder embed, String player, String type) {
-        MessageCreateSpec.Builder msg = MessageCreateSpec.builder().content(
-                (String)(type.equals("2fa-code") ? "🔐 Yêu cầu xác minh 2FA cho " + player : "📢 Thông báo OPProtection!")
-        ).addEmbed(embed.build());
+    private void createOrUpdate(MessageChannel channel, String type, Map<String, String> placeholders,
+                                EmbedCreateSpec embed, boolean withButton) {
+        String player = placeholders.getOrDefault("player", "unknown");
+        Snowflake existing = active2faMessages.get(player);
+        if (existing != null && (type.equals("2fa-code") || type.equals("verified"))) {
+            channel.getMessageById(existing)
+                    .flatMap(message -> message.edit(MessageEditSpec.builder().addEmbed(embed).build()))
+                    .timeout(Duration.ofSeconds(10))
+                    .subscribe(message -> {
+                        if (type.equals("verified")) active2faMessages.remove(player);
+                    }, error -> {
+                        active2faMessages.remove(player);
+                        createNew(channel, type, placeholders, embed, withButton);
+                    });
+            return;
+        }
+        createNew(channel, type, placeholders, embed, withButton);
+    }
 
-        channel.createMessage(msg.build())
-                .retry(3)  
-                .timeout(java.time.Duration.ofSeconds(10)) 
-                .subscribe(
-                success -> {
-                    if (type.equals("2fa-code") && success != null) {
-                        this.active2faMessages.put(player, success.getId());
-                    }
-                },
-                error -> {
-                    this.plugin.getLogger().severe("Không thể gửi tin nhắn Discord: " + error.getMessage());
-                }
-        );
+    private void createNew(MessageChannel channel, String type, Map<String, String> placeholders,
+                           EmbedCreateSpec embed, boolean withButton) {
+        MessageCreateSpec.Builder builder = MessageCreateSpec.builder().addEmbed(embed);
+        if (withButton) {
+            String requestId = placeholders.get("request_id");
+            if (requestId != null && !requestId.isBlank()) {
+                builder.addComponent(ActionRow.of(Button.success("opprotect:verify:" + requestId, "Xác minh quản trị viên")));
+            }
+        }
+        channel.createMessage(builder.build()).timeout(Duration.ofSeconds(10)).subscribe(message -> {
+            if (type.equals("2fa-code")) active2faMessages.put(placeholders.getOrDefault("player", "unknown"), message.getId());
+        }, error -> plugin.getLogger().severe("[Discord] Không thể gửi embed " + type + ": " + error.getMessage()));
     }
 
     public void sendSimpleMessage(String content) {
-        if (this.client == null) {
-            plugin.getLogger().warning("Discord client is null, cannot send message");
-            return;
-        }
-        
-        try {
-            Mono<MessageChannel> channelMono = this.client.getChannelById(Snowflake.of(this.channelId))
-                    .cast(MessageChannel.class)
-                    .doOnError(error -> {
-                        if (error.getMessage() != null && error.getMessage().contains("404")) {
-                            plugin.getLogger().severe("Discord channel not found (404). Check channelId in config.yml");
-                        } else {
-                            plugin.getLogger().severe("Failed to get Discord channel: " + error.getMessage());
-                        }
-                    });
-
-            channelMono.subscribe(
-                    channel -> channel.createMessage(content)
-                            .retry(3)  
-                            .timeout(java.time.Duration.ofSeconds(10))
-                            .subscribe(
-                                success -> {
-                                    plugin.getLogger().fine("Discord message sent successfully");
-                                },
-                                error -> {
-                                    String errorMsg = error.getMessage();
-                                    if (errorMsg != null) {
-                                        if (errorMsg.contains("Connection reset")) {
-                                            plugin.getLogger().warning("Discord connection reset. This may be temporary. The message will be retried on next attempt.");
-                                        } else if (errorMsg.contains("Timeout")) {
-                                            plugin.getLogger().warning("Discord request timeout. Network may be slow.");
-                                        } else if (errorMsg.contains("403") || errorMsg.contains("Forbidden")) {
-                                            plugin.getLogger().severe("Discord permission denied. Check bot permissions in the channel.");
-                                        } else {
-                                            plugin.getLogger().severe("Failed to send Discord message: " + errorMsg);
-                                        }
-                                    } else {
-                                        plugin.getLogger().severe("Unknown error sending Discord message: " + error.getClass().getSimpleName());
-                                    }
-                                }
-                            ),
-                    error -> {
-                        if (error.getMessage() != null && error.getMessage().contains("Connection reset")) {
-                            plugin.getLogger().warning("Discord connection issue. Attempting reconnection...");
-                        } else {
-                            plugin.getLogger().warning("Error accessing Discord channel: " + error.getMessage());
-                        }
-                    }
-            );
-        } catch (Exception e) {
-            plugin.getLogger().severe("Exception in sendSimpleMessage: " + e.getMessage());
-            if (e.getMessage() != null && e.getMessage().contains("Connection reset")) {
-                plugin.getLogger().warning("Discord connection reset. This is usually temporary and will recover.");
-            }
-            e.printStackTrace();
-        }
+        channel().flatMap(channel -> channel.createMessage(content)).timeout(Duration.ofSeconds(10))
+                .subscribe(ignored -> { }, error -> plugin.getLogger().warning("[Discord] Không thể gửi message: " + error.getMessage()));
     }
 
     public void sendSpoofAlertEmbed(String playerName, String socketIp, String spoofedIp, String spoofedUuid, String reason) {
-        Map<String, String> placeholders = Map.of(
+        sendEmbed("spoof-alert", Map.of(
                 "player", playerName,
                 "ip", socketIp,
+                "socketIp", socketIp,
+                "socket_ip", socketIp,
+                "spoofedIp", spoofedIp,
                 "spoofed_ip", spoofedIp,
+                "spoofedUuid", spoofedUuid,
                 "spoofed_uuid", spoofedUuid,
-                "reason", reason
-        );
-        this.sendEmbed("spoof-alert", placeholders, false);
+                "reason", reason), false);
     }
 
     public void sendSpoofAlertEmbed(String playerName, String socketIp, String spoofedIp, String reason) {
-        this.sendSpoofAlertEmbed(playerName, socketIp, spoofedIp, "N/A", reason);
+        sendSpoofAlertEmbed(playerName, socketIp, spoofedIp, "N/A", reason);
     }
 
-    private String replacePlaceholders(String text, Map<String, String> placeholders) {
-        if (text == null) {
-            return "";
+    private Mono<MessageChannel> channel() {
+        return client.getChannelById(Snowflake.of(channelId)).ofType(MessageChannel.class);
+    }
+
+    private String replace(String text, Map<String, String> placeholders) {
+        String output = text == null ? "" : text;
+        for (Map.Entry<String, String> entry : placeholders.entrySet()) {
+            output = output.replace("%" + entry.getKey() + "%", entry.getValue());
         }
-        for (Map.Entry<String, String> e : placeholders.entrySet()) {
-            text = text.replace("%" + e.getKey() + "%", e.getValue());
-        }
-        return text;
+        return output;
     }
 
-    public GatewayDiscordClient getClient() {
-        return this.client;
-    }
-
-    public boolean isConnected() {
-        return this.client != null;
-    }
+    public GatewayDiscordClient getClient() { return client; }
+    public boolean isConnected() { return client != null; }
 }
