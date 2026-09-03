@@ -1,0 +1,44 @@
+# ============================================================
+# OPProtection - Core Configuration
+# ============================================================
+# Các cài đặt chung của plugin: metric, whitelist, password, timeout.
+# ============================================================
+
+# Không được tắt mục này. bStats chỉ gửi số liệu thống kê ẩn danh của plugin.
+metric: true
+
+# false khi chạy server đơn, kể cả server đơn online-mode=false.
+# true khi backend nằm sau Velocity/Bungee và proxy đã forwarding UUID/IP đúng cách.
+# Giá trị này giúp PremiumAuth phân biệt proxy backend với server standalone offline-mode.
+ip-forwarding: false
+
+# Số phút một phiên quyền cao được giữ trước khi bắt buộc xác minh lại.
+# Giá trị càng thấp càng an toàn nhưng admin sẽ phải đăng nhập bảo mật thường xuyên hơn.
+# Giới hạn tối đa: 120 phút (để tránh session quá lâu).
+op-verification-reset-time: 20
+
+# Danh sách tài khoản quản trị được phép nhận Bukkit OP hoặc LuckPerms wildcard "*".
+# Tên không phân biệt hoa/thường trong bước whitelist, nhưng Premium PreAuth có thể kiểm tra đúng kiểu chữ.
+op-whitelist:
+  - "YourName"
+
+# Không nhập mật khẩu thô tại đây.
+# Hãy tạo hoặc reset mật khẩu từ console bằng:
+#   /oppass createpass <mật-khẩu>
+#   /oppass resetpass [mật-khẩu]
+# Plugin chỉ lưu PBKDF2 hash tại khóa này để tương thích với cấu hình cũ.
+op-password: ""
+
+# Số giây tối đa để tài khoản quản trị hoàn tất toàn bộ quy trình xác minh.
+pass-timeout: 60
+
+# Hành động khi hết thời gian xác minh.
+# Hỗ trợ: "ban" hoặc "kick". Giữ "ban" nếu muốn bảo mật nghiêm ngặt như bản cũ.
+verification-timeout-action: "ban"
+
+# Các command bổ sung được console chạy khi tài khoản whitelist rời server.
+# OPProtection vẫn tự thu hồi Bukkit OP, wildcard "*" và phiên xác minh trước khi chạy danh sách này.
+logout-actions:
+  - "deop %player%"
+  - "lp user %player% permission unset *"
+  - "gamemode survival %player%"

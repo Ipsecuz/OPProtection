@@ -1,0 +1,48 @@
+# ============================================================
+# OPProtection - Command Protection
+# ============================================================
+# Các lệnh bị chặn, được phép, và điều khiển command từ console.
+# ============================================================
+
+# Những lệnh vẫn bị cấm ngay cả sau khi tài khoản quyền cao đã xác minh thành công.
+# Dùng tên command không cần dấu "/"; namespace như bukkit:version vẫn được hỗ trợ.
+disabled-commands:
+  - "op"
+  - "pl"
+  - "plugins"
+  - "about"
+  - "bukkit"
+  - "ver"
+  - "version"
+  - "icanhasbukkit"
+  - "server"
+  - "luckperms"
+  - "luckperms:lp"
+  - "lp"
+  - "setblock"
+  - "kill"
+  - "/sphere"
+  - "pt"
+  - "powertool"
+  - "ept"
+  - "execute"
+  - "perms"
+  - "perm"
+  - "permission"
+
+# Các lệnh người chơi vẫn được dùng trong lúc đang bị khóa chờ xác minh.
+# Nên chỉ cho phép lệnh đăng nhập/xác thực cần thiết.
+allowed-commands:
+  - "login"
+  - "l"
+  - "register"
+
+# Tùy chọn chặn một số command chạy trực tiếp từ console.
+console-blocked-cmd:
+  # false = console vẫn dùng command bình thường.
+  enabled: false
+
+  # Danh sách command console bị chặn khi tính năng phía trên được bật.
+  commands:
+    - "about"
+    - "stop"

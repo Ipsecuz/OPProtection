@@ -1,0 +1,79 @@
+# ============================================================
+# OPProtection - Premium Authentication
+# ============================================================
+# Xác minh tài khoản Java Premium và server cracked detection.
+# ============================================================
+# Premium PreAuth độc lập dành cho các tài khoản trong op-whitelist.
+# Tính năng này không hook và không yêu cầu JPremium.
+# OPProtection tự tra Mojang/Minecraft Services và tự chọn cơ chế theo môi trường:
+# - online-mode=true: UUID phải trùng UUID Premium chính thức.
+# - backend sau proxy, ip-forwarding=true: UUID do proxy chuyển xuống phải trùng UUID Premium chính thức.
+# - server đơn online-mode=false, ip-forwarding=false: nLogin-like PRE detection (xem bên dưới).
+# ============================================================
+
+premium-auth:
+  # Bật xác minh tài khoản Java Premium trước khi cho tài khoản quản trị tiếp tục đăng nhập.
+  enabled: false
+
+  # true = dịch vụ Mojang lỗi/timeout thì từ chối đăng nhập; khuyến nghị giữ true cho tài khoản admin.
+  # false = cho phép fail-open khi API lỗi, giảm an toàn và chỉ nên dùng tạm thời để xử lý sự cố.
+  fail-closed: true
+
+  # Timeout cho mỗi request tới Mojang/Minecraft Services, đơn vị mili giây.
+  mojang-timeout-ms: 3000
+
+  # Số vòng thử lại khi API lỗi tạm thời hoặc trả về HTTP 429/5xx; giới hạn nội bộ từ 1 đến 3.
+  lookup-retries: 2
+
+  # Thời gian cache hồ sơ Premium thành công/không tồn tại, đơn vị giây.
+  cache-seconds: 3600
+
+  # Giới hạn số lần tra cứu Mojang mỗi phút để tránh bị Mojang rate limit (429) hoặc ban bot.
+  # Các tên tra cứu trùng nhau đã được cache và gộp (dedup), nên 60/phút là rất dư cho whitelist admin.
+  lookup-rate-limit-per-minute: 60
+
+  # Thời gian hiệu lực của phiên PreAuth từ lúc pre-login đến khi player join xong, đơn vị giây.
+  # Sau khi join thành công, phiên được gắn với player và KHÔNG còn phụ thuộc TTL này nữa
+  # (admin chậm nhập oppass không bao giờ bị văng vì hết phiên). Giới hạn 30 - 3600 giây.
+  pre-session-ttl-seconds: 120
+
+  # true = yêu cầu tên đăng nhập khớp chính xác chữ hoa/thường với hồ sơ Mojang.
+  require-exact-name-case: false
+
+  # Điều khiển bypass 2FA Discord cho tài khoản premium trên server cracked (kiểu nLogin pre):
+  # - Server cracked sẽ luôn tra cứu Mojang khi premium-auth.enabled=true.
+  # - Tên có hồ sơ Premium được đánh dấu phiên PRE (pre-state).
+  # - true  = phiên PRE (hoặc premium trong registry) được bỏ qua bước 2FA sau mật khẩu.
+  # - false = không có mức nào trên server cracked được bỏ qua 2FA (an toàn nhất).
+  # CHÚ Ý RỦI RO: trên server cracked không có cách chứng minh quyền sở hữu tài khoản,
+  # việc bật true đồng nghĩa BẤT KỲ ai dùng đúng tên premium trong op-whitelist
+  # (ví dụ tên admin thật) cũng được coi là pre. Chỉ bật khi chấp nhận rủi ro đó.
+  op-whitelist-premium-auto-bypass-2fa: false
+
+  # Tin nhắn kick khi UUID/tài khoản Premium không hợp lệ hoặc có dấu hiệu giả mạo.
+  messages:
+    kick-cracked-spoof: "&#FF5C5CVui lòng đăng nhập acc premium"
+
+  # ============================================================
+  # Cracked Server Premium Detection (kiểu nLogin pre)
+  # ============================================================
+  # Áp dụng cho server chạy online-mode=false, ip-forwarding=false.
+  #
+  # enabled=true: tên trong op-whitelist trùng hồ sơ Premium thật trên Mojang sẽ được
+  #   đánh dấu phiên PRE (nLogin-style). Mật khẩu oppass LUÔN bắt buộc; chỉ bước 2FA
+  #   sau mật khẩu mới có thể bỏ qua nếu op-whitelist-premium-auto-bypass-2fa=true.
+  # enabled=false: không đánh dấu PRE; mọi tài khoản vẫn phải nhập oppass + 2FA bình thường.
+  #
+  # Key cũ "auto-detect" đã bị loại bỏ: không còn cơ chế tự bypass oppass theo tên và
+  # không còn tự đăng ký player vào premium-registry (đây từng là lỗ hổng nghiêm trọng).
+  # Tier B (admin registry) vẫn giữ nguyên: admin chủ động xác minh qua console.
+  cracked-mode:
+    enabled: true
+
+  # ============================================================
+  # Premium Registry Commands (Tier B)
+  # ============================================================
+  # Quản lý từ console:
+  #   /oppass premium-register <player>    — Đăng ký player là premium (admin xác minh thủ công)
+  #   /oppass premium-unregister <player>  — Gỡ player khỏi danh sách premium
+  #   /oppass premium-list                  — Xem danh sách player premium đã đăng ký

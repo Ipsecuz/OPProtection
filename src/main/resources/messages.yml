@@ -1,0 +1,105 @@
+prefix: "&8[&#42D4F4&lOP&#EAF6FFProtection&8] &7"
+
+no_permission: "&#FF5C5CBạn không có quyền sử dụng chức năng này."
+oppass_usage: "&#FFD166Cách dùng: &#FFFFFF/oppass <mật-khẩu hoặc mã-2FA>"
+oppass_change_usage: "&#FFD166Đổi mật khẩu cá nhân: &#FFFFFF/oppass change <mật-khẩu-cũ> <mật-khẩu-mới>"
+oppass_console_only: "&#FF5C5CChức năng quản trị này chỉ được phép chạy từ console."
+oppass_internal_error: "&#FF5C5CKhông thể xử lý xác minh. Hãy báo quản trị viên kiểm tra console."
+oppass_password_policy: "&#FF5C5CMật khẩu phải có ít nhất &#FFFFFF%min% &#FF5C5Cký tự."
+oppass_checking: "&#42D4F4Đang kiểm tra thông tin xác minh an toàn..."
+oppass_rate_limited: "&#FF5C5CBạn đã thử quá nhiều lần. Hãy thử lại sau &#FFFFFF%seconds%s&#FF5C5C."
+
+already_confirmed: "&#6EE7A8Phiên quyền cao của bạn đã được xác minh."
+password_changed: "&#6EE7A8Đã đổi mật khẩu cá nhân và lưu bằng hash an toàn."
+password_wrong: "&#FF5C5CMật khẩu cũ không chính xác."
+login_success: "&#6EE7A8Xác minh OP thành công."
+oppass_password_correct: "&#6EE7A8Mật khẩu chính xác. &#FFD166Hãy chờ console xác nhận bằng &#FFFFFF/oppass confirm %player%&#FFD166."
+oppass_password_incorrect: "&#FF5C5CMật khẩu không chính xác."
+oppass_password_incorrect_attempts: "&#FF5C5CMật khẩu không chính xác. Còn &#FFFFFF%attempts% &#FF5C5Clần thử."
+oppass_confirm_player_offline: "&#FF5C5CNgười chơi không online."
+oppass_confirm_not_in_whitelist: "&#FF5C5CNgười chơi không nằm trong OP whitelist."
+oppass_confirm_not_needed: "&#6EE7A8Người chơi đã được xác minh."
+oppass_confirm_no_password: "&#FF5C5CNgười chơi chưa nhập đúng mật khẩu."
+oppass_confirm_discord_pending: "&#FFD166Người chơi vẫn đang chờ xác minh Discord."
+oppass_confirm_success: "&#6EE7A8Đã xác minh phiên quyền cao cho &#FFFFFF%player%&#6EE7A8."
+oppass_confirm_success_player: "&#6EE7A8Console đã phê duyệt phiên quyền cao của bạn."
+
+oppass_console_usage: "&#42D4F4Các lệnh quản trị OPProtection:"
+oppass_createpass_usage: "&#FFFFFF/oppass createpass <mật-khẩu> &8- tạo mật khẩu OP global."
+oppass_resetpass_usage: "&#FFFFFF/oppass resetpass [mật-khẩu] &8- reset hoặc tạo mật khẩu ngẫu nhiên."
+oppass_console_confirm_usage: "&#FFFFFF/oppass confirm <player> &8- xác nhận sau bước password."
+oppass_console_resetip_usage: "&#FFFFFF/oppass resetip <player> &8- xóa dấu vết IP tin cậy."
+oppass_createpass_success: "&#6EE7A8Đã tạo mật khẩu OP global và chỉ lưu PBKDF2 hash."
+oppass_resetpass_success: "&#6EE7A8Đã reset mật khẩu OP global."
+oppass_resetpass_generated: |-
+  &#FFD166Mật khẩu mới chỉ hiển thị một lần: &#FFFFFF%password%
+  &8Hãy lưu ngay; hash không thể đọc ngược thành mật khẩu.
+
+oppass_2fa_waiting: "&#FFD166Hãy nhập mã 2FA bằng &#FFFFFF/oppass <mã-2FA>"
+oppass_2fa_correct: "&#6EE7A8Mã 2FA chính xác. Phiên quyền cao đã được mở khóa."
+oppass_2fa_incorrect: "&#FF5C5CMã 2FA không chính xác."
+oppass_2fa_incorrect_attempts: "&#FF5C5CMã 2FA không chính xác. Còn &#FFFFFF%attempts% &#FF5C5Clần thử."
+oppass_2fa_code_expired: "&#FF5C5CMã 2FA đã hết hạn. Hãy bắt đầu xác minh lại."
+oppass_2fa_code_already_sent: "&#FFD166Mã 2FA đang còn hiệu lực. Hãy kiểm tra Discord."
+oppass_2fa_discord_sent: "&#6EE7A8Mã 2FA một lần đã được gửi qua Discord."
+oppass_2fa_wait_admin: "&#FFD166Hãy chờ quản trị viên phê duyệt yêu cầu Discord."
+oppass_discord_pending: "&#FFD166Đang chờ xác minh Discord."
+oppass_2fa_missing: "&#FF5C5CKhông có mã 2FA hợp lệ cho phiên này."
+oppass_2fa_delivery_failed: "&#FF5C5CKhông thể gửi mã 2FA. Hãy kiểm tra cấu hình Discord."
+
+op_verification_title: "&#FF5C5C&lBẢO MẬT QUYỀN CAO"
+op_verification_subtitle: "&#FFD166Còn &#FFFFFF%time%s &#FFD166để xác minh"
+op_verification_instruction: "&#FFD166Nhập &#FFFFFF/oppass <mật-khẩu> &#FFD166trong &#FFFFFF%time%s&#FFD166."
+op_verification_discord_instruction: "&#FFD166Hoặc hoàn tất yêu cầu xác minh Discord."
+op_verification_console_instruction: "&#FFD166Hoặc chờ console phê duyệt sau bước mật khẩu."
+op_verification_timeout: "&#FF5C5CĐã hết thời gian xác minh quyền cao."
+op_verification_timeout_ban_reason: "&#FF5C5CHết thời gian xác minh tài khoản quản trị."
+op_verification_timeout_kick: "&#FF5C5CĐã hết thời gian xác minh quyền cao. Mọi đặc quyền đã bị thu hồi."
+op_verification_success: "&#6EE7A8Xác minh thành công. Trạng thái và quyền hợp lệ đã được khôi phục."
+op_verification_warning: "&#FFD166Phiên quyền cao sắp hết hạn và sẽ yêu cầu xác minh lại."
+op_verification_ip_mismatch: "&#FFD166IP hiện tại khác lần xác minh trước. IP chỉ được ghi nhận làm tín hiệu cảnh báo, không tự mở khóa."
+op_verification_ip_auto_login: "&#FFD166IP tin cậy không còn tự động mở khóa vì lý do bảo mật."
+op_verification_command_blocked: "&#FF5C5CBạn phải xác minh quyền cao trước khi dùng lệnh này."
+op_regrant_verify_required: "&#FFD166Phát hiện yêu cầu cấp quyền cao. Quyền chỉ được cấp sau khi xác minh hoàn tất."
+op_locked_chat_blocked: "&#FF5C5CBạn đang ở trạng thái khóa bảo mật và chưa thể thực hiện thao tác này."
+op_command_console_only: "&#FF5C5CLệnh /op trực tiếp đã bị chặn. Hãy dùng console hoặc quyền emergency đã xác minh để tạo yêu cầu an toàn."
+op_secure_usage: "&#FFD166Cách dùng an toàn: &#FFFFFF/op <player>"
+deop_secure_usage: "&#FFD166Cách dùng an toàn: &#FFFFFF/deop <player>"
+privilege_target_offline: "&#FF5C5CNgười chơi mục tiêu phải đang online."
+deop_secure_success: "&#6EE7A8Đã thu hồi toàn bộ quyền cao và phiên xác minh của &#FFFFFF%player%&#6EE7A8."
+premium_auto_verified: "&#6EE7A8PreAuth Premium hợp lệ. Bước 2FA được xử lý theo cấu hình."
+premium_auth_pending: "&#FFD166Đang xác minh tài khoản Minecraft Java Premium..."
+premium_auth_rejected: "&#FF5C5CVui lòng đăng nhập acc premium."
+disabled_command_for_op: "&#FF5C5CLệnh này bị chặn cho tài khoản quyền cao vì lý do bảo mật."
+
+oppass_resetip_success: "&#6EE7A8Đã xóa IP đã ghi nhận của &#FFFFFF%player%&#6EE7A8."
+oppass_resetip_not_found: "&#FF5C5CKhông tìm thấy IP đã lưu của &#FFFFFF%player%&#FF5C5C."
+oppass_resetip_kick: |-
+  &#FF5C5CDấu vết IP xác minh của bạn vừa được reset.
+  &#FFD166Hãy đăng nhập lại và hoàn tất xác minh quyền cao.
+oppass_resetip_kicked: "&#6EE7A8Đã ngắt kết nối &#FFFFFF%player% &#6EE7A8để áp dụng reset IP."
+
+command_blocked: "&#FF5C5CLệnh này đã bị OPProtection khóa."
+geoip_block_message: "&#FF5C5CKhu vực của bạn không được phép truy cập server."
+reload_ingame_error: "&#FF5C5CVì an toàn, lệnh reload và hash baseline chỉ chạy từ console."
+reload_success: "&#6EE7A8Reload OPProtection hoàn tất."
+op_fake_ban_reason: "&#FF5C5CPhát hiện cố gắng chiếm quyền quản trị trái phép."
+
+# Discord-Sync
+discord_sync_kick_message: |-
+  &#FF5C5CBạn chưa xác minh Discord cho thao tác nhạy cảm này.
+  &#FFD166Hãy dùng /verify và chờ quản trị viên phê duyệt.
+discord_sync_deop_message: "&#FF5C5CMọi quyền cao đã bị thu hồi do thiếu xác minh Discord."
+discord_verify_broadcast: "&#6EE7A8%player% đã xác minh Discord thành công."
+discord_sync_required: "&#FFD166Lệnh này yêu cầu xác minh Discord. Dùng &#FFFFFF/verify&#FFD166."
+discord_sync_unavailable: "&#FF5C5CDiscord-Sync chưa sẵn sàng hoặc bot chưa kết nối."
+discord_sync_verified: "&#6EE7A8Discord-Sync xác minh thành công. Phiên có hiệu lực trong &#FFFFFF%minutes% phút&#6EE7A8."
+discord_verify_request_sent: "&#6EE7A8Đã gửi yêu cầu xác minh một lần lên Discord."
+
+# Premium Registry (cracked server premium detection)
+premium_registry_registered: "&#6EE7A8Đã đăng ký &#FFFFFF%player% &#6EE7A8là tài khoản Premium."
+premium_registry_unregistered: "&#6EE7A8Đã gỡ &#FFFFFF%player% &#6EE7A8khỏi danh sách Premium."
+premium_registry_not_found: "&#FF5C5CKhông tìm thấy &#FFFFFF%player% &#FF5C5Ctrong danh sách Premium."
+premium_registry_usage: "&#FFD166Cách dùng: &#FFFFFF/oppass premium-register <player> &#FFD166hoặc &#FFFFFF/oppass premium-unregister <player>"
+premium_registry_list_header: "&#42D4F4Danh sách tài khoản Premium đã xác minh:"
+premium_registry_list_empty: "&#FF5C5CChưa có tài khoản Premium nào được xác minh."

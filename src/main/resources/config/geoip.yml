@@ -1,0 +1,26 @@
+# ============================================================
+# OPProtection - GeoIP Restriction
+# ============================================================
+# Giới hạn tài khoản quản trị theo quốc gia dựa trên IP công khai.
+# ============================================================
+
+geoip:
+  # Bật kiểm tra GeoIP cho người chơi đăng nhập.
+  enabled: false
+
+  # Danh sách mã quốc gia ISO-3166-1 alpha-2 được phép, ví dụ VN, US, SG.
+  allowed-countries:
+    - "VN"
+
+  # Timeout tối đa cho mỗi yêu cầu GeoIP, đơn vị mili giây.
+  timeout-ms: 3000
+
+  # Thời gian cache kết quả IP để giảm số lần gọi API, đơn vị giây.
+  cache-seconds: 1800
+
+  # true = lỗi API hoặc timeout cũng chặn tài khoản bảo vệ để tránh fail-open.
+  # false = cho phép đăng nhập khi dịch vụ GeoIP lỗi.
+  fail-closed: true
+
+  # Tin nhắn kick khi quốc gia không nằm trong danh sách cho phép.
+  block-message: "&#FF5C5CQuốc gia của bạn không được phép truy cập server."

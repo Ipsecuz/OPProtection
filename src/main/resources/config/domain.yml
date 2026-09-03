@@ -1,0 +1,41 @@
+# ============================================================
+# OPProtection - Domain Whitelist
+# ============================================================
+# Chỉ cho phép người chơi vào bằng domain và proxy chính thức.
+# ============================================================
+
+domain-whitelist:
+  # Bật kiểm tra hostname/domain trong handshake đăng nhập.
+  enabled: false
+
+  # Danh sách domain hợp lệ; domain đầu tiên được dùng trong tin nhắn hướng dẫn.
+  allowed-domains:
+    - "play.myserver.com"
+    - "mc.yourdomain.net"
+
+  # true = cho phép cả subdomain, ví dụ asia.play.myserver.com.
+  allow-subdomains: false
+
+  # Xác minh IP socket thật sự thuộc proxy đã tin cậy để tránh giả mạo hostname.
+  strict-proxy-ip:
+    # Bật whitelist IP proxy. Nên luôn bật nếu domain-whitelist đang hoạt động.
+    enabled: true
+
+    # Danh sách IP/CIDR/wildcard của proxy được phép kết nối tới backend.
+    allowed-proxy-ips:
+      - "127.0.0.1"
+      - "::1"
+
+    # true = chặn toàn bộ kết nối nếu danh sách allowed-proxy-ips bị để trống.
+    block-when-empty: true
+
+  # Tin nhắn riêng của lớp domain/proxy.
+  messages:
+    # Tin nhắn khi người chơi dùng domain không hợp lệ hoặc kết nối trực tiếp.
+    kick-message: "&#FF5C5CBạn không được phép kết nối trực tiếp.\n&#FFD166Hãy sử dụng domain chính thức: &#FFFFFF%domain%"
+
+    # Tin nhắn khi server không đọc được hostname trong phiên đăng nhập.
+    no-domain-detected: "&#FF5C5CKhông xác định được domain kết nối. Hãy vào lại bằng domain chính thức."
+
+    # Tin nhắn khi IP socket không thuộc proxy whitelist.
+    proxy-blocked: "&#FF5C5CProxy hoặc IP kết nối không hợp lệ."

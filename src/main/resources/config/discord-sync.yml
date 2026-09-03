@@ -1,0 +1,57 @@
+# ============================================================
+# OPProtection - Discord-Sync Verification
+# ============================================================
+# Yêu cầu phê duyệt Discord trước khi dùng lệnh nhạy cảm.
+# ============================================================
+
+discord-sync:
+  # Bật lớp xác minh Discord-Sync.
+  enabled: false
+
+  # Hành động khi tài khoản chưa xác minh nhưng cố dùng command nhạy cảm.
+  # Hỗ trợ: "kick", "deop"
+  # Lưu ý: "shutdown"/"stop" đã bị vô hiệu hóa vĩnh viễn vì là lỗ hổng DoS — một admin
+  # chưa verify Discord chạy nhầm lệnh protected là cả server bị tắt. Nếu config vẫn
+  # giữ giá trị cũ, plugin sẽ tự đổi sang hành động deop+kick và ghi log cảnh báo.
+  unauthorized-action: "kick"
+
+  # Số giây một phiên Discord-Sync đã duyệt còn hiệu lực.
+  verification-timeout-seconds: 300
+
+  # Số giây một yêu cầu/mã phê duyệt còn hiệu lực trước khi phải tạo lại.
+  request-timeout-seconds: 120
+
+  # Số lần nhập sai mã phê duyệt tối đa.
+  max-code-attempts: 5
+
+  # Thời gian khóa tạm sau khi nhập sai mã quá nhiều, đơn vị giây.
+  code-lockout-seconds: 300
+
+  # true = ghi các sự kiện Discord-Sync quan trọng ra console.
+  log-to-console: true
+
+  # Danh sách Discord user ID được phép phê duyệt yêu cầu.
+  allowed-discord-user-ids: []
+
+  # Danh sách Discord role ID được phép phê duyệt yêu cầu.
+  # Phải có ít nhất một user ID hoặc role ID để nút phê duyệt hoạt động.
+  allowed-discord-role-ids: []
+
+  # Những command bắt buộc phải có phiên Discord-Sync hợp lệ.
+  commands:
+    - "/reload"
+    - "/stop"
+    - "/restart"
+    - "/op"
+    - "/deop"
+    - "/ban"
+    - "/kick"
+    - "/save-all"
+
+  # Tin nhắn riêng của Discord-Sync.
+  messages:
+    command-requires-sync: "&#FFB84DLệnh này yêu cầu xác minh Discord."
+    verify-required: "&#FFD166Hãy dùng /verify và chờ quản trị viên Discord phê duyệt."
+    deop-message: "&#FF5C5CQuyền cao đã bị thu hồi vì chưa xác minh Discord."
+    shutdown-message: "&#FF5C5CServer đang dừng do phát hiện hành vi bảo mật nghiêm trọng."
+    kick-message: "&#FF5C5CBạn chưa xác minh Discord cho thao tác nhạy cảm này."

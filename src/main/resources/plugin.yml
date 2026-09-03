@@ -1,0 +1,47 @@
+name: OPProtection
+version: '${project.version}'
+main: org.ipsecuz.opprotection.OPProtection
+api-version: '1.21'
+load: POSTWORLD
+authors: [Ipsecuz_, FoxStudio]
+description: Professional protection for OP and wildcard-permission accounts.
+depend: [packetevents]
+softdepend: [LuckPerms]
+folia-supported: true
+commands:
+  oppass:
+    description: Xác minh và quản lý mật khẩu bảo mật OP
+    usage: /<command> <password|change|createpass|resetpass|confirm|resetip>
+    permission: opprotection.oppass
+    permission-message: ""
+  opreload:
+    description: Reload OPProtection hoặc quản lý baseline SHA-256
+    usage: /<command> [hashcheck|hashaccept]
+    permission: opprotection.opreload
+    permission-message: ""
+  verify:
+    description: Tạo yêu cầu xác minh Discord một lần
+    usage: /<command>
+    permission: opprotection.verify
+    permission-message: ""
+  opverify:
+    description: Phê duyệt mã Discord-Sync của một người chơi
+    usage: /<command> <player> <one-time-code>
+    permission: opprotection.opverify
+    permission-message: ""
+permissions:
+  opprotection.oppass:
+    default: op
+  opprotection.opreload:
+    default: op
+  opprotection.verify:
+    default: op
+  opprotection.opverify:
+    default: op
+  opprotection.bypass.blacklist:
+    default: false
+  opprotection.emergency:
+    description: Cho phép admin đã xác minh tạo yêu cầu /op hoặc thu hồi /deop an toàn trong game
+    default: false
+  opprotection.temp:
+    default: false

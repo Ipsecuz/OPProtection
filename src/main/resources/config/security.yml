@@ -1,0 +1,115 @@
+# ============================================================
+# OPProtection - Security Settings
+# ============================================================
+# Bảo mật mật khẩu, tab-complete, anti-spam, integrity check, audit log.
+# ============================================================
+
+# Chính sách bảo vệ mật khẩu và mã 2FA.
+password-security:
+  # Độ dài tối thiểu của mật khẩu do admin tự đặt.
+  min-length: 10
+
+  # Độ dài mật khẩu ngẫu nhiên khi dùng /oppass resetpass mà không nhập mật khẩu mới.
+  generated-length: 24
+
+  # Số lần nhập sai mật khẩu tối đa trong một cửa sổ kiểm tra.
+  max-attempts: 5
+
+  # Khoảng thời gian tính số lần nhập sai mật khẩu, đơn vị giây.
+  attempt-window-seconds: 60
+
+  # Thời gian khóa tạm sau khi vượt quá số lần nhập sai mật khẩu, đơn vị giây.
+  lockout-seconds: 180
+
+  # Số lần nhập sai mã 2FA tối đa trước khi bị khóa tạm.
+  max-2fa-attempts: 5
+
+  # Thời gian khóa tạm sau khi nhập sai mã 2FA quá nhiều, đơn vị giây.
+  2fa-lockout-seconds: 300
+
+# Bảo vệ nội dung mật khẩu khỏi command logger và plugin theo dõi command thông thường.
+secure-command-input:
+  # true = PacketEvents chặn raw command /oppass trước khi mật khẩu xuất hiện trong console log.
+  hide-oppass-from-console-log: true
+
+# Giảm spam command từ người chơi.
+anti-spam:
+  # Bật giới hạn tốc độ command.
+  enabled: false
+
+  # Khoảng cách tối thiểu giữa hai command, đơn vị giây.
+  delay-seconds: 1
+
+  # Tin nhắn khi người chơi gửi command quá nhanh.
+  spam-message: "&#FFB84DHãy chậm lại, bạn đang gửi lệnh quá nhanh."
+
+# Ẩn và chặn tab-complete của các lệnh nhạy cảm hoặc lệnh làm lộ thông tin server/plugin.
+tab-complete-block:
+  # Bật lớp bảo vệ tab-complete ở cả Bukkit event và PacketEvents.
+  enabled: true
+
+  # true = in thêm log phục vụ debug tab-complete; nên để false trên production.
+  debug: false
+
+  # Các command root được theo dõi để xóa gợi ý tham số từ server.
+  target-commands:
+    - "version"
+    - "ver"
+    - "about"
+    - "bukkit"
+    - "bukkit:version"
+    - "bukkit:ver"
+    - "bukkit:about"
+
+  # Danh sách command không được phép xuất hiện trong gợi ý tab-complete.
+  blocked-commands:
+    - "ver"
+    - "version"
+    - "about"
+    - "bukkit"
+    - "bukkit:ver"
+    - "bukkit:version"
+    - "bukkit:about"
+    - "minecraft:ver"
+    - "minecraft:version"
+    - "minecraft:about"
+    - "icanhasbukkit"
+    - "paper:version"
+    - "folia:version"
+    - "plugins"
+    - "pl"
+    - "plugin"
+    - "server"
+    - "help"
+    - "?"
+    - "reload"
+    - "rl"
+    - "stop"
+    - "restart"
+    - "reload-all"
+    - "luckperms"
+    - "lp"
+    - "luckperms:lp"
+    - "luckperms:user"
+    - "luckperms:group"
+    - "luckperms:track"
+    - "essentials"
+    - "ess"
+    - "essentials:*"
+
+# Theo dõi SHA-256 của toàn bộ file JAR trong thư mục plugins.
+# Tính năng chỉ cảnh báo thay đổi; không tự xóa hoặc tự disable plugin để tránh false positive.
+integrity-check:
+  # Bật giám sát plugin JAR theo baseline SHA-256.
+  enabled: true
+
+  # Chu kỳ quét lại thư mục plugins, đơn vị phút; giá trị nhỏ hơn 5 sẽ tự nâng lên 5.
+  interval-minutes: 30
+
+# Nhật ký sự kiện bảo mật dạng append-only và tự xoay vòng.
+audit-log:
+  # Dung lượng tối đa của file audit hiện tại trước khi rotate, đơn vị MB.
+  max-size-mb: 20
+
+  # Số file audit cũ được giữ lại sau khi rotate.
+  retained-files: 5

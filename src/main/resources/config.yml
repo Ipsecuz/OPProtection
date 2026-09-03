@@ -1,0 +1,23 @@
+# ============================================================
+# OPProtection v2.6 - Root Configuration
+# ============================================================
+# File này CHỈ chứa metadata của plugin.
+# Mọi tính năng được cấu hình trong thư mục config/:
+#
+#   config/core.yml          - Whitelist, password, timeout, logout, ip-forwarding, metric
+#   config/commands.yml      - Disabled/allowed commands, console block
+#   config/security.yml      - Password policy, tab-complete, anti-spam, integrity, audit
+#   config/premium.yml       - Premium auth, cracked-mode detection (Tier B+C)
+#   config/discord.yml       - Bot token, 2FA, IP change alert + role ping
+#   config/discord-sync.yml  - Discord sync verification
+#   config/geoip.yml         - GeoIP restriction by country
+#   config/domain.yml        - Domain whitelist, proxy IP validation
+#   config/brand.yml         - F3 brand spoof
+#
+# Module config tự động load khi plugin khởi động.
+# KHÔNG thêm feature setting vào file này — sẽ bị module file ghi đè.
+# ============================================================
+
+# Phiên bản cấu hình root, dùng cho migration nội bộ.
+# Không tự ý đổi giá trị này trừ khi biết rõ hậu quả.
+config-version: 1

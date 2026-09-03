@@ -1,0 +1,40 @@
+# ============================================================
+# OPProtection - Discord Integration
+# ============================================================
+# Bot Discord: 2FA, cảnh báo IP, và các embed bảo mật.
+# ============================================================
+
+discord:
+  # Bật kết nối bot Discord.
+  enabled: false
+
+  # Token bot Discord. Không chia sẻ file config chứa token cho người khác.
+  token: "YOUR_BOT_TOKEN"
+
+  # ID kênh Discord nhận mã 2FA/cảnh báo của OPProtection.
+  channel-id: "YOUR_CHANNEL_ID"
+
+  # true = sau bước mật khẩu, admin phải nhập thêm mã 2FA gửi qua Discord.
+  use-2fa: false
+
+  # Số giây mã 2FA Discord còn hiệu lực trước khi tự hết hạn.
+  two-fa-code-timeout-seconds: 60
+
+  # Giới hạn tốc độ gửi tin nhắn để bot không bị Discord rate limit (429) hoặc ban.
+  # Giá trị khuyến nghị: 5 tin nhắn / 2 giây (đúng mức Discord cho phép mỗi kênh).
+  # Khi vượt, tin nhắn sẽ được hoãn gửi (tối đa 15 giây) thay vì drop ngay.
+  rate-limit:
+    messages-per-2-seconds: 5
+
+  # Cảnh báo khi player đăng nhập từ IP khác so với lần trước.
+  ip-change-alert:
+    # Bật/tắt tính năng cảnh báo thay đổi IP qua Discord.
+    enabled: false
+
+    # ID role Discord sẽ được tag (@mention) khi có thay đổi IP.
+    # Nếu để trống, sẽ không tag role mà chỉ gửi embed thường.
+    # Ví dụ: "123456789012345678"
+    alert-role-id: ""
+
+    # Chỉ cảnh báo cho tài khoản trong op-whitelist (admin accounts).
+    whitelist-only: true

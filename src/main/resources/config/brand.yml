@@ -1,0 +1,16 @@
+# ============================================================
+# OPProtection - F3 Brand Spoof
+# ============================================================
+# Thay đổi brand hiển thị trong F3 để hạn chế lộ phần mềm server/backend.
+# ============================================================
+
+f3-brand-spoof:
+  # Bật chặn và thay thế packet minecraft:brand.
+  enabled: true
+
+  # Brand giả hiển thị cho client trong F3.
+  # Hỗ trợ cả mã màu legacy (&b) và hex (&#42D4F4).
+  fake-brand: "&bOP&fProtection"
+
+  # true = in log packet brand phục vụ debug; nên để false trên production.
+  debug: false
