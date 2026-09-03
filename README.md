@@ -7,7 +7,7 @@
 
 **OPProtection** là plugin bảo mật dành cho server Minecraft, tập trung vào việc bảo vệ tài khoản quản trị, quyền **OP**, quyền LuckPerms wildcard `*`, xác minh nhiều lớp, chống spoof và giảm nguy cơ lộ thông tin server.
 
-> **Lưu ý về phiên bản:** Source hiện tại được build với **Java 21** và Paper API **1.21.11**. Plugin khai báo `folia-supported: true` và có scheduler riêng để hỗ trợ Folia. Không nên quảng cáo Java 17+ cho bản source 2.6 này nếu chưa build/test lại bằng Java 17.
+> **Lưu ý về phiên bản:** Source hiện tại được build với **Java 21** và Paper API **1.21.11**. Plugin khai báo `folia-supported: true` và có scheduler riêng để hỗ trợ Folia.
 
 ---
 
